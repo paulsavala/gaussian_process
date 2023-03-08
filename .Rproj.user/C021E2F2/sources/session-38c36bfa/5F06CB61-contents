@@ -1,0 +1,9 @@
+# https://bookdown.org/rbg/surrogates/chap5.html#chap5library
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+library(mvtnorm)
+library(plgp)
+
+
