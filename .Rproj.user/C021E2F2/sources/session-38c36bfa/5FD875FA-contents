@@ -25,8 +25,8 @@ epan.kernel = function(u, h) {
   (2 / pi) * (1 / h**2) * (1-(u/h)**2)
 }
 
-generate.gp = function(df.knots, X, y) {
-  N.KNOTS = nrow(df.knots)
+generate.gp = function(X.knots, X, y) {
+  N.KNOTS = nrow(X.knots)
   RADIUS = 0.2
   
   # Empty list to hold all local spatial processes
@@ -125,18 +125,18 @@ fit.params = function(sim.background, sim.local.list, X.knots, X.train, y.train,
                        ell=ell)
   
   # Replicate actual values along each column to compute MSE
-  y.obs.matrix = matrix(y.obs, nrow=length(y.obs), ncol=ncol(sim.background))
+  y.train.matrix = matrix(y.train, nrow=length(y.train), ncol=ncol(sim.background))
   
   # Compute MSE 
-  mse = sum((sim.total - y.obs.matrix)**2 / length(y.obs.matrix))
+  mse = sum((sim.total - y.train.matrix)**2 / length(y.train.matrix))
   return(mse)
 }
 
 # Fitting local GPs using training data ------------------------------------------------------------
 fit.fuentes.gp = function(X.knots, X.train, y.train) {
-  N.KNOTS = nrow(df.knots)
+  N.KNOTS = nrow(X.knots)
   
-  gp.all = generate.gp(df.knots, X.train, y.train)
+  gp.all = generate.gp(X.knots, X.train, y.train)
   gp.background = gp.all$gp.background
   gp.list = gp.all$gp.list
   
@@ -153,8 +153,8 @@ fit.fuentes.gp = function(X.knots, X.train, y.train) {
                  sim.background=sim.train.background,
                  sim.local.list=sim.train.local.list,
                  X.knots=X.knots,
-                 X.obs=X.train,
-                 y.obs=y.train)
+                 X.train=X.train,
+                 y.train=y.train)
   
   sqrt_alpha = params$par[1]
   ell = params$par[2]
@@ -164,7 +164,7 @@ fit.fuentes.gp = function(X.knots, X.train, y.train) {
 }
 
 predict.fuentes.gp = function(X.knots, X, y, params) {
-  gp.all = generate.gp(df.knots, X, y)
+  gp.all = generate.gp(X.knots, X, y)
   gp.background = gp.all$gp.background
   gp.list = gp.all$gp.list
   

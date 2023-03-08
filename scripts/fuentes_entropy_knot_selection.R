@@ -16,39 +16,87 @@
 
 library(rSPDE)
 library(fields)
+library(fields)
+library(ggforce)
+
+# Data loading/prep -------------------------------------------------------
+# Data parameters
+N.KNOTS = 10
+RADIUS = 0.2
+# N.LATTICE.X = 25
+# N.LATTICE.Y = 25
+
+# Load EPA data
+epa.data = readRDS('data/df_data_12list.RDS')
+# Single snapshot
+epa.df = epa.data[[1]]
+epa.df$case_cntl = NULL
+epa.df$year = NULL
+names(epa.df) = c('station_id', 'x', 'y', 'pm2_5')
+epa.df$station_id = NULL
+
+# Filter to remove duplicates
+epa.df = epa.df[!duplicated(epa.df[, c('x', 'y')]), ]
+
+# # Filter to just western US
+# epa.df = epa.df %>%
+#   filter(x < 0.25)
+
+# Convert to mean zero and standard deviation 1
+epa.df$pm2_5 = epa.df$pm2_5 %>% scale
+
+# Train-test split data
+train_size = as.integer(0.7 * nrow(epa.df))
+epa.train.idx = sample(1:nrow(epa.df), size=train_size)
+epa.test.idx = setdiff(1:nrow(epa.df), epa.train.idx)
+epa.train.df = epa.df[epa.train.idx, ]
+epa.test.df = epa.df[epa.test.idx, ]
+
+# Create X and y matrices
+X.train = epa.train.df[, names(epa.train.df) != 'pm2_5']
+X.test = epa.test.df[, names(epa.test.df) != 'pm2_5']
+y.train = epa.train.df$pm2_5
+y.test = epa.test.df$pm2_5
+
+# Package into training and testing data frames
+df.train = cbind(X.train, y.train)
+df.test = cbind(X.test, y.test)
+names(df.train) = c('x', 'y', 'pm2_5')
+names(df.test) = c('x', 'y', 'pm2_5')
 
 
 # Helper functions --------------------------------------------------------
-# Combining GPs -----------------------------------------------------------
 # Epanechnikov kernel (distance function)
 epan.kernel = function(u, h) {
   (2 / pi) * (1 / h**2) * (1-(u/h)**2)
 }
 
-generate.gp = function(df.knots, X, y) {
-  N.KNOTS = nrow(df.knots)
+generate.gp = function(X.knots, X, y, only.background=FALSE) {
+  N.KNOTS = nrow(X.knots)
   RADIUS = 0.2
   
   # Empty list to hold all local spatial processes
   gp.list = list()
   
-  for (knot.id in 1:N.KNOTS) {
-    # Get knot coordinates
-    r = X.knots[knot.id, ] %>% matrix(ncol=ncol(X.knots))
-    
-    # Find distance from all points to current knot
-    D = distance(r, X)
-    
-    # Get points within circle of radius RADIUS
-    r.idx = which(D < RADIUS)
-    r.nbhd = X[r.idx, ]
-    r.nbhd.y = y[r.idx]
-    
-    # Fit spatial processes
-    gp.fit = spatialProcess(x=r.nbhd, y=r.nbhd.y)
-    
-    # Store fitted spatial process
-    gp.list[[knot.id]] = gp.fit
+  if (!only.background) {
+    for (knot.id in 1:N.KNOTS) {
+      # Get knot coordinates
+      r = X.knots[knot.id, ] %>% matrix(ncol=ncol(X.knots))
+      
+      # Find distance from all points to current knot
+      D = distance(r, X)
+      
+      # Get points within circle of radius RADIUS
+      r.idx = which(D < RADIUS)
+      r.nbhd = X[r.idx, ]
+      r.nbhd.y = y[r.idx]
+      
+      # Fit spatial processes
+      gp.fit = spatialProcess(x=r.nbhd, y=r.nbhd.y)
+      
+      # Store fitted spatial process
+      gp.list[[knot.id]] = gp.fit
+    }
   }
   
   # Fit background GP -------------------------------------------------------
@@ -61,8 +109,7 @@ generate.gp = function(df.knots, X, y) {
 # Generate simulations from all spatial processes (local + background)
 simulate.gp = function(gp.list,
                        gp.background,
-                       X,
-                       y) {
+                       X) {
   
   # Number of samples (used for estimating variability/calculating entropy)
   num_samples = 100
@@ -72,9 +119,11 @@ simulate.gp = function(gp.list,
   
   # Simulate from local spatial processes
   sim.local = list()
-  for (i in 1:length(gp.list)) {
-    sim.gp = sim.spatialProcess(gp.list[[i]], X, M=num_samples)
-    sim.local[[i]] = sim.gp
+  if (!is.null(gp.list)) {
+    for (i in 1:length(gp.list)) {
+      sim.gp = sim.spatialProcess(gp.list[[i]], X, M=num_samples)
+      sim.local[[i]] = sim.gp
+    }
   }
   
   return(list("sim.background"=sim.background,
@@ -125,23 +174,23 @@ fit.params = function(sim.background, sim.local.list, X.knots, X.train, y.train,
                        ell=ell)
   
   # Replicate actual values along each column to compute MSE
-  y.obs.matrix = matrix(y.obs, nrow=length(y.obs), ncol=ncol(sim.background))
+  y.train.matrix = matrix(y.train, nrow=length(y.train), ncol=ncol(sim.background))
   
   # Compute MSE 
-  mse = sum((sim.total - y.obs.matrix)**2 / length(y.obs.matrix))
+  mse = sum((sim.total - y.train.matrix)**2 / length(y.train.matrix))
   return(mse)
 }
 
 # Fitting local GPs using training data ------------------------------------------------------------
 fit.fuentes.gp = function(X.knots, X.train, y.train) {
-  N.KNOTS = nrow(df.knots)
+  N.KNOTS = nrow(X.knots)
   
-  gp.all = generate.gp(df.knots, X.train, y.train)
+  gp.all = generate.gp(X.knots, X.train, y.train)
   gp.background = gp.all$gp.background
   gp.list = gp.all$gp.list
   
   # Generate predictions from all processes
-  sim.train.values = simulate.gp(gp.list, gp.background, X.train, y.train)
+  sim.train.values = simulate.gp(gp.list, gp.background, X.train)
   # Save background and local processes separately for easy reference
   sim.train.background = sim.train.values$sim.background
   sim.train.local.list = sim.train.values$sim.local
@@ -153,8 +202,8 @@ fit.fuentes.gp = function(X.knots, X.train, y.train) {
                  sim.background=sim.train.background,
                  sim.local.list=sim.train.local.list,
                  X.knots=X.knots,
-                 X.obs=X.train,
-                 y.obs=y.train)
+                 X.train=X.train,
+                 y.train=y.train)
   
   sqrt_alpha = params$par[1]
   ell = params$par[2]
@@ -164,12 +213,12 @@ fit.fuentes.gp = function(X.knots, X.train, y.train) {
 }
 
 predict.fuentes.gp = function(X.knots, X, y, params) {
-  gp.all = generate.gp(df.knots, X, y)
+  gp.all = generate.gp(X.knots, X, y)
   gp.background = gp.all$gp.background
   gp.list = gp.all$gp.list
   
   # Generate predictions from all processes
-  sim.values = simulate.gp(gp.list, gp.background, X, y)
+  sim.values = simulate.gp(gp.list, gp.background, X)
   # Save background and local processes separately for easy reference
   sim.background = sim.values$sim.background
   sim.local.list = sim.values$sim.local
@@ -195,5 +244,109 @@ predict.fuentes.gp = function(X.knots, X, y, params) {
 
 
 # Fit Fuentes GP on a number of different knots ---------------------------
-N_KNOT_SETS = 50
+N_KNOT_SETS = 25
+
+knot_set.list.X = list()
+knot_set.list.y = list()
+knot_set.info.df = data.frame(id=NA, se=NA, utility=NA)
+
+for (knot_set.idx in 1:N_KNOT_SETS) {
+  print(paste0("Fitting knot set ", knot_set.idx, "/", N_KNOT_SETS, "..."))
+  
+  # Create a lattice of x and y coordinates from which to sample
+  lattice.x = seq(from=min(epa.df$x), to=max(epa.df$x), length.out=100)
+  lattice.y = seq(from=min(epa.df$y), to=max(epa.df$y), length.out=100)
+  
+  # Sample N.KNOTS random x and y locations
+  X.knots = data.frame(x=sample(lattice.x, size=N.KNOTS),
+                       y=sample(lattice.y, size=N.KNOTS))
+  
+  # Fit Fuentes model hyperparameters
+  params = fit.fuentes.gp(X.knots, X.train, y.train)
+  preds.df = predict.fuentes.gp(X.knots, X.test, y.test, params)
+  
+  # === Calculate utility ===
+  # Calculate median PM 2.5 in neighborhood of knot
+  knot_set.median_pm2_5 = c()
+  for (i in 1:N.KNOTS) {
+    # Get knot coordinates
+    r = X.knots[i, ] %>% matrix(ncol=ncol(X.knots))
+    
+    # Find distance from all points to current knot
+    D = distance(r, X.train)
+    
+    # Get points within circle of radius RADIUS
+    r.idx = which(D < RADIUS)
+    r.nbhd.y = y.train[r.idx]
+    
+    # Calculate median PM 2.5 in this radius
+    r.pm2_5 = median(r.nbhd.y)
+    
+    # Record this median
+    knot_set.median_pm2_5 = c(knot_set.median_pm2_5, r.pm2_5)
+  }
+  
+  # Calculate background GP using training data
+  gp.background = generate.gp(X.knots, X.train, y.train, only.background=TRUE)$gp.background
+  
+  # Predict at knots using background GP
+  knot_set.background.preds = simulate.gp(gp.list=NULL, gp.background, X.knots)$sim.background
+  
+  # Store median PM 2.5 and background preds together
+  knot_set.df = data.frame(median_pm2_5=knot_set.median_pm2_5,
+                           median_preds=apply(knot_set.background.preds, 1, median))
+  
+  # Record difference from median in z-score
+  knot_set.df$pm2_5_z = scale(knot_set.df$median_preds - knot_set.df$median_pm2_5)
+  
+  # Record knots in knot_set.list
+  knot_set.list.X[[knot_set.idx]] = X.knots
+  
+  # Record knot set info in knot_set.info.df
+  knot_set.info.df[knot_set.idx, 'id'] = knot_set.idx
+  knot_set.info.df[knot_set.idx, 'se'] = sum(preds.df$se_pred)
+  knot_set.info.df[knot_set.idx, 'utility'] = sum(knot_set.df$pm2_5_z)
+}
+
+# Find the knots using the entropy (SE) and utility defined in her paper
+max_se.idx = knot_set.info.df[knot_set.info.df$se == max(knot_set.info.df$se), 'id']
+max_utility.idx = knot_set.info.df[knot_set.info.df$utility == max(knot_set.info.df$utility), 'id']
+
+if (max_se.idx == max_utility.idx) {
+  best_knots.idx = max_se.idx
+} else {
+  se_diff = knot_set.info.df[max_se.idx, 'se'] - knot_set.info.df[max_utility.idx, 'se']
+  se_sum = knot_set.info.df[max_se.idx, 'se'] + knot_set.info.df[max_utility.idx, 'se']
+  se_relative_gain = se_diff / se_sum
+  
+  utility_diff = knot_set.info.df[max_utility.idx, 'utility'] - knot_set.info.df[max_se.idx, 'utility']
+  utility_sum = knot_set.info.df[max_utility.idx, 'utility'] + knot_set.info.df[max_se.idx, 'utility']
+  utility_relative_gain = utility_diff / utility_sum
+  
+  if (se_relative_gain > utility_relative_gain) {
+    best_knots.idx = max_se.idx
+  } else {
+    best_knots.idx = max_utility.idx
+  }
+}
+
+# Select knots for this index
+X.knots = knot_set.list.X[[best_knots.idx]]
+
+# Fit model using these knots
+params = fit.fuentes.gp(X.knots, X.train, y.train)
+
+# Make predictions using this model
+preds.df = predict.fuentes.gp(X.knots, X.test, y.test, params)
+
+
+
+
+
+
+
+
+
+
+
 
