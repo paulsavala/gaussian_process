@@ -21,7 +21,7 @@ load_epa_data = function(snapshot_id=1) {
 }
 
 
-train_test_split(df, train_size=0.7) {
+train_test_split = function(df, train_size=0.7) {
   # Train-test split data
   train_size = as.integer(train_size * nrow(epa.df))
   epa.train.idx = sample(1:nrow(epa.df), size=train_size)

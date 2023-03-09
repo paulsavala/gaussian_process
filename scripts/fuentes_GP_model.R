@@ -20,7 +20,6 @@ library(dplyr)
 
 
 # Helper functions --------------------------------------------------------
-# Combining GPs -----------------------------------------------------------
 # Epanechnikov kernel (distance function)
 epan.kernel = function(u, h) {
   (2 / pi) * (1 / h**2) * (1-(u/h)**2)
@@ -72,10 +71,14 @@ simulate.gp = function(gp.list,
   sim.background = sim.spatialProcess(gp.background, X, M=num_samples)
   
   # Simulate from local spatial processes
-  sim.local = list()
-  for (i in 1:length(gp.list)) {
-    sim.gp = sim.spatialProcess(gp.list[[i]], X, M=num_samples)
-    sim.local[[i]] = sim.gp
+  if (!is.null(gp.list)) {
+    sim.local = list()
+    for (i in 1:length(gp.list)) {
+      sim.gp = sim.spatialProcess(gp.list[[i]], X, M=num_samples)
+      sim.local[[i]] = sim.gp
+    }
+  } else {
+    sim.local = NULL
   }
   
   return(list("sim.background"=sim.background,
