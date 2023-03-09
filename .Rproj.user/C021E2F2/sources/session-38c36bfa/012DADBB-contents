@@ -16,8 +16,8 @@
 
 library(rSPDE)
 library(fields)
-library(fields)
 library(ggforce)
+library(dplyr)
 
 # Data loading/prep -------------------------------------------------------
 # Data parameters
@@ -84,7 +84,7 @@ generate.gp = function(X.knots, X, y, only.background=FALSE) {
       r = X.knots[knot.id, ] %>% matrix(ncol=ncol(X.knots))
       
       # Find distance from all points to current knot
-      D = distance(r, X)
+      D = rdist(r, X)
       
       # Get points within circle of radius RADIUS
       r.idx = which(D < RADIUS)
@@ -150,7 +150,7 @@ gp.preds = function(sim.background, sim.local.list, X.knots, X.obs, y.obs, sqrt_
       # Just the j'th sample of the i'th local spatial process
       sim.local.i.j = sim.local.list[[i]][, j]
       sim.local.sum.j = sim.local.sum.j + 
-        epan.kernel(u=distance(matrix(X.knots[i, ], ncol=2), X.obs), h=ell) * sim.local.i.j
+        epan.kernel(u=rdist(matrix(X.knots[i, ], ncol=2), X.obs), h=ell) * sim.local.i.j
     }
     # Combine local and background predictions into one row (all locations simultaneously)
     sim.total[, j] = sim.background.j + sqrt_alpha * sim.local.sum.j
@@ -273,7 +273,7 @@ for (knot_set.idx in 1:N_KNOT_SETS) {
     r = X.knots[i, ] %>% matrix(ncol=ncol(X.knots))
     
     # Find distance from all points to current knot
-    D = distance(r, X.train)
+    D = rdist(r, X.train)
     
     # Get points within circle of radius RADIUS
     r.idx = which(D < RADIUS)
