@@ -85,14 +85,19 @@ ggplot(epa.df) +
 
 
 #### Knot Selection: Fuentes spatial process ####
-
+knots.fuentes = fit.fuentes.knots(25, X.train, y.train)
 
 # Functions (Knots Evaluation) ------------------------------------------------------------------------------------
+#### Fuentes spatial process model ####
+gp.cd.params = fit.fuentes.gp(knots.cd, X.train, y.train)
+gp.entropy.params = fit.fuentes.gp(knots.entropy, X.train, y.train)
+gp.fuentes.params = fit.fuentes.gp(knots.fuentes, X.train, y.train)
+
 
 eval_knots = function(df.points, df.knots, pred.knots.name="default_pred_knot_name", k=3, vis=F) {
   # gam fitting
   gam.eval = gam(
-    signal ~ te(x, y, k=k, bs="gp"),  # , k=12, bs="so"
+    pm2_5 ~ s(x, y, k=k, bs="gp"),  # , k=12, bs="so"
     data=df.knots,
     method="REML",
     family=gaussian
