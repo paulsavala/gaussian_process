@@ -241,49 +241,51 @@ fit.fuentes.knots = function(n.knots, X.train, y.train, n.knot_sets=25, radius=0
     
     # Fit Fuentes model hyperparameters
     params = fit.fuentes.gp(X.knots, X.train, y.train)
-    preds.df = predict.fuentes.gp(X.knots, X.train, params)
-    
-    # === Calculate utility ===
-    # Calculate median PM 2.5 in neighborhood of knot
-    knot_set.median_pm2_5 = c()
-    for (i in 1:n.knots) {
-      # Get knot coordinates
-      r = X.knots[i, ] %>% matrix(ncol=ncol(X.knots))
+    if (!is.null(params)) {
+      preds.df = predict.fuentes.gp(X.knots, X.train, params)
       
-      # Find distance from all points to current knot
-      D = rdist(r, X.train)
+      # === Calculate utility ===
+      # Calculate median PM 2.5 in neighborhood of knot
+      knot_set.median_pm2_5 = c()
+      for (i in 1:n.knots) {
+        # Get knot coordinates
+        r = X.knots[i, ] %>% matrix(ncol=ncol(X.knots))
+        
+        # Find distance from all points to current knot
+        D = rdist(r, X.train)
+        
+        # Get points within circle of radius
+        r.idx = which(D < radius)
+        r.nbhd.y = y.train[r.idx]
+        
+        # Calculate median PM 2.5 in this radius
+        r.pm2_5 = median(r.nbhd.y)
+        
+        # Record this median
+        knot_set.median_pm2_5 = c(knot_set.median_pm2_5, r.pm2_5)
+      }
       
-      # Get points within circle of radius
-      r.idx = which(D < radius)
-      r.nbhd.y = y.train[r.idx]
+      # Calculate background GP using training data
+      gp.background = generate.gp(X.knots, X.train, y.train)$gp.background
       
-      # Calculate median PM 2.5 in this radius
-      r.pm2_5 = median(r.nbhd.y)
+      # Predict at knots using background GP
+      knot_set.background.preds = simulate.gp(gp.list=NULL, gp.background, X.knots)$sim.background
       
-      # Record this median
-      knot_set.median_pm2_5 = c(knot_set.median_pm2_5, r.pm2_5)
+      # Store median PM 2.5 and background preds together
+      knot_set.df = data.frame(median_pm2_5=knot_set.median_pm2_5,
+                               median_preds=apply(knot_set.background.preds, 1, median))
+      
+      # Record difference from median in z-score
+      knot_set.df$pm2_5_z = scale(knot_set.df$median_preds - knot_set.df$median_pm2_5)
+      
+      # Record knots in knot_set.list
+      knot_set.list.X[[knot_set.idx]] = X.knots
+      
+      # Record knot set info in knot_set.info.df
+      knot_set.info.df[knot_set.idx, 'id'] = knot_set.idx
+      knot_set.info.df[knot_set.idx, 'se'] = sum(preds.df$se_pred)
+      knot_set.info.df[knot_set.idx, 'utility'] = sum(knot_set.df$pm2_5_z)
     }
-    
-    # Calculate background GP using training data
-    gp.background = generate.gp(X.knots, X.train, y.train)$gp.background
-    
-    # Predict at knots using background GP
-    knot_set.background.preds = simulate.gp(gp.list=NULL, gp.background, X.knots)$sim.background
-    
-    # Store median PM 2.5 and background preds together
-    knot_set.df = data.frame(median_pm2_5=knot_set.median_pm2_5,
-                             median_preds=apply(knot_set.background.preds, 1, median))
-    
-    # Record difference from median in z-score
-    knot_set.df$pm2_5_z = scale(knot_set.df$median_preds - knot_set.df$median_pm2_5)
-    
-    # Record knots in knot_set.list
-    knot_set.list.X[[knot_set.idx]] = X.knots
-    
-    # Record knot set info in knot_set.info.df
-    knot_set.info.df[knot_set.idx, 'id'] = knot_set.idx
-    knot_set.info.df[knot_set.idx, 'se'] = sum(preds.df$se_pred)
-    knot_set.info.df[knot_set.idx, 'utility'] = sum(knot_set.df$pm2_5_z)
   }
   
   # Find the knots using the entropy (SE) and utility defined in her paper

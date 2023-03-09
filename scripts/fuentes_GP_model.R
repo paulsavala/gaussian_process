@@ -132,41 +132,59 @@ fit.params = function(sim.background, sim.local.list, X.knots, X.train, y.train,
   y.train.matrix = matrix(y.train, nrow=length(y.train), ncol=ncol(sim.background))
   
   # Compute MSE 
-  mse = sum((sim.total - y.train.matrix)**2 / length(y.train.matrix))
+  mse = sum((sim.total - y.train.matrix)**2 / length(y.train))
   return(mse)
 }
 
 # Fitting local GPs using training data ------------------------------------------------------------
 fit.fuentes.gp = function(X.knots, X.train, y.train) {
   N.KNOTS = nrow(X.knots)
-  
-  gp.all = generate.gp(X.knots, X.train, y.train)
-  gp.background = gp.all$gp.background
-  gp.list = gp.all$gp.list
-  
-  # Generate predictions from all processes
-  sim.train.values = simulate.gp(gp.list, gp.background, X.train)
-  # Save background and local processes separately for easy reference
-  sim.train.background = sim.train.values$sim.background
-  sim.train.local.list = sim.train.values$sim.local
-  
-  params = optim(par=c(1, 1), fn=fit.params, 
-                 method="L-BFGS",
-                 lower=c(0, 0),
-                 upper=c(10, 1),
-                 sim.background=sim.train.background,
-                 sim.local.list=sim.train.local.list,
-                 X.knots=X.knots,
-                 X.train=X.train,
-                 y.train=y.train)
-  
-  sqrt_alpha = params$par[1]
-  ell = params$par[2]
-  
-  return(list("sqrt_alpha"=sqrt_alpha, 
-              "ell"=ell,
-              "gp.background"=gp.background,
-              "gp.list"=gp.list))
+
+  tryCatch(
+    {
+      gp.all = generate.gp(X.knots, X.train, y.train)
+      gp.background = gp.all$gp.background
+      gp.list = gp.all$gp.list
+      
+      # Generate predictions from all processes
+      sim.train.values = simulate.gp(gp.list, gp.background, X.train)
+      # Save background and local processes separately for easy reference
+      sim.train.background = sim.train.values$sim.background
+      sim.train.local.list = sim.train.values$sim.local
+      
+      # Fit parameters by minimizing MSE
+      params = optim(par=c(1, 1), fn=fit.params, 
+            method="L-BFGS",
+            lower=c(0, 0),
+            upper=c(10, 1),
+            sim.background=sim.train.background,
+            sim.local.list=sim.train.local.list,
+            X.knots=X.knots,
+            X.train=X.train,
+            y.train=y.train)
+      
+      sqrt_alpha = params$par[1]
+      ell = params$par[2]
+      
+      return(list("sqrt_alpha"=sqrt_alpha, 
+                  "ell"=ell,
+                  "gp.background"=gp.background,
+                  "gp.list"=gp.list))
+    },
+    error = function(e) {
+      print('Knots errored out')
+      return(NULL)
+    }
+  )
+  # params = optim(par=c(1, 1), fn=fit.params, 
+  #                method="L-BFGS",
+  #                lower=c(0, 0),
+  #                upper=c(10, 1),
+  #                sim.background=sim.train.background,
+  #                sim.local.list=sim.train.local.list,
+  #                X.knots=X.knots,
+  #                X.train=X.train,
+  #                y.train=y.train)
 }
 
 predict.fuentes.gp = function(X.knots, X, params) {

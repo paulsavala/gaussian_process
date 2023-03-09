@@ -27,6 +27,7 @@ source("scripts/ka_v5_functions.R")
 
 # Parameters --------------------------------------------------------------
 RADIUS = 0.2
+N.KNOTS = 25
 
 
 # Data loading ------------------------------------------------------------
@@ -61,7 +62,7 @@ make_knots = function(df, N_k, ...) {
   return(knots_df)
 }
 
-knots.cd = make_knots(grid.df, 25)
+knots.cd = make_knots(grid.df, N.KNOTS)
 
 ggplot(epa.df) +
   geom_point(aes(x=x, y=y, color=pm2_5, size=2)) +
@@ -73,7 +74,8 @@ ggplot(epa.df) +
 
 #### Knot Selection: Entropy Maximization ####
 
-knots.entropy = vkr_base(df.train, list(n_neighbors=10, radius_mult=1, max_knots=25, cols_to_sort=c("entropy")))
+knots.entropy = vkr_base(df.train, list(n_neighbors=10, radius_mult=1, max_knots=N.KNOTS, cols_to_sort=c("entropy")))
+knots.entropy = knots.entropy[, c('x', 'y')]
 # vkr.gs = vkr_gs(df.points=df.train, seq.nn=1:10, seq.rm=seq(from=2, to=3, by=.25), n.knots=25, cols.to.sort=c("entropy"), gam.k=3)
 
 ggplot(epa.df) +
@@ -81,56 +83,85 @@ ggplot(epa.df) +
   scale_color_gradient2(low='blue', high='red', midpoint=0) +
   geom_point(data=grid.df, aes(x=x, y=y), alpha=0.25, size=1) +
   geom_point(data=knots.entropy, aes(x=x, y=y), shape=4, size=5) +
-  ggtitle('Training data, grid and DR knots')
+  ggtitle('Training data, grid and Entropy knots')
 
 
 #### Knot Selection: Fuentes spatial process ####
-knots.fuentes = fit.fuentes.knots(25, X.train, y.train)
+knots.fuentes = fit.fuentes.knots(N.KNOTS, X.train, y.train, n.knot_sets=15)
 
-# Functions (Knots Evaluation) ------------------------------------------------------------------------------------
-#### Fuentes spatial process model ####
+ggplot(epa.df) +
+  geom_point(aes(x=x, y=y, color=pm2_5, size=2)) +
+  scale_color_gradient2(low='blue', high='red', midpoint=0) +
+  geom_point(data=grid.df, aes(x=x, y=y), alpha=0.25, size=1) +
+  geom_point(data=knots.fuentes, aes(x=x, y=y), shape=4, size=5) +
+  ggtitle('Training data, grid and Fuentes knots')
+
+# Knot Evaluation ------------------------------------------------------------------------------------
+# Fit Fuentes spatial process model using each set of knots
 gp.cd.params = fit.fuentes.gp(knots.cd, X.train, y.train)
 gp.entropy.params = fit.fuentes.gp(knots.entropy, X.train, y.train)
 gp.fuentes.params = fit.fuentes.gp(knots.fuentes, X.train, y.train)
 
+# Make predictions on the test set
+gp.cd.preds = predict.fuentes.gp(knots.cd, X.test, gp.cd.params)
+gp.entropy.preds = predict.fuentes.gp(knots.entropy, X.test, gp.entropy.params)
+gp.fuentes.preds = predict.fuentes.gp(knots.fuentes, X.test, gp.fuentes.params)
 
-eval_knots = function(df.points, df.knots, pred.knots.name="default_pred_knot_name", k=3, vis=F) {
-  # gam fitting
-  gam.eval = gam(
-    pm2_5 ~ s(x, y, k=k, bs="gp"),  # , k=12, bs="so"
-    data=df.knots,
-    method="REML",
-    family=gaussian
-  )
-  # gam visualization
-  if (vis == T) { vis.gam(gam.eval, type="response", plot.type="contour", color="gray") }
-  # predictions
-  df.points[, pred.knots.name] = predict(gam.eval, newdata=df.points)
-  # mean squared error; lower is better
-  # mse = (df.points$signal - df.points[, pred.knots.name])^2 %>% mean
-  # print(paste0("Mean Squared Error (lower better): ", mse))
-  # correlation squared; higher is better
-  # cor2 = cor(df.points$signal, df.points[, pred.knots.name])^2
-  # print(paste0("Correlation Squared (higher better): ", cor2))
-  df.points
-}
+# Compute MSE
+gp.cd.mse = sum((gp.cd.preds$median_pred - y.test)**2) / length(y.test)
+gp.entropy.mse = sum((gp.entropy.preds$median_pred - y.test)**2) / length(y.test)
+gp.fuentes.mse = sum((gp.fuentes.preds$median_pred - y.test)**2) / length(y.test)
 
-eval_knots_mse = function(df.points, df.knots, gam.k=3) {
-  gam.eval = gam(signal ~ te(x, y, k=gam.k, bs="gp"),data=df.knots,method="REML", family=gaussian)
-  df.points[, "pkn"] = predict(gam.eval, newdata=df.points)
-  (df.points$signal - df.points[, "pkn"])^2 %>% mean  # mse
-}
+# Compute median standard error
+gp.cd.se = median(gp.cd.preds$se)
+gp.entropy.se = median(gp.entropy.preds$se)
+gp.fuentes.se = median(gp.fuentes.preds$se)
 
-eval_knots_metrics = function(df.points.evaled) {
-  result.metrics = list()
-  n.knot.types = (names(df.points.evaled) %>% length) - 3
-  for(i.knot.type in 1:n.knot.types) {
-    i.name = names(df.points.evaled)[3+i.knot.type]
-    result.metrics[paste0(i.name, "_mse")] = (df.points.evaled$signal - df.points.evaled[, i.name])^2 %>% mean
-    result.metrics[paste0(i.name, "_cor2")] = cor(df.points.evaled$signal, df.points.evaled[, i.name])^2
-  }
-  result.metrics
-}
+# Print results in a nicely formatted table
+line1=paste0(N.KNOTS, " knots")
+line2=paste0("\nCover Design:\n\tMSE = ", gp.cd.mse %>% round(4), " --- Median standard error = ", gp.cd.se %>% round(4))
+line3=paste0("\nEntropy:\n\tMSE = ", gp.entropy.mse %>% round(4), " --- Median standard error = ", gp.entropy.se %>% round(4))
+line4=paste0("\nFuentes:\n\tMSE = ", gp.fuentes.mse %>% round(4), " --- Median standard error = ", gp.fuentes.se %>% round(4))
+
+cat(line1, line2, line3, line4)
+
+# eval_knots = function(df.points, df.knots, pred.knots.name="default_pred_knot_name", k=3, vis=F) {
+#   # gam fitting
+#   gam.eval = gam(
+#     pm2_5 ~ s(x, y, k=k, bs="gp"),  # , k=12, bs="so"
+#     data=df.knots,
+#     method="REML",
+#     family=gaussian
+#   )
+#   # gam visualization
+#   if (vis == T) { vis.gam(gam.eval, type="response", plot.type="contour", color="gray") }
+#   # predictions
+#   df.points[, pred.knots.name] = predict(gam.eval, newdata=df.points)
+#   # mean squared error; lower is better
+#   # mse = (df.points$signal - df.points[, pred.knots.name])^2 %>% mean
+#   # print(paste0("Mean Squared Error (lower better): ", mse))
+#   # correlation squared; higher is better
+#   # cor2 = cor(df.points$signal, df.points[, pred.knots.name])^2
+#   # print(paste0("Correlation Squared (higher better): ", cor2))
+#   df.points
+# }
+# 
+# eval_knots_mse = function(df.points, df.knots, gam.k=3) {
+#   gam.eval = gam(signal ~ te(x, y, k=gam.k, bs="gp"),data=df.knots,method="REML", family=gaussian)
+#   df.points[, "pkn"] = predict(gam.eval, newdata=df.points)
+#   (df.points$signal - df.points[, "pkn"])^2 %>% mean  # mse
+# }
+# 
+# eval_knots_metrics = function(df.points.evaled) {
+#   result.metrics = list()
+#   n.knot.types = (names(df.points.evaled) %>% length) - 3
+#   for(i.knot.type in 1:n.knot.types) {
+#     i.name = names(df.points.evaled)[3+i.knot.type]
+#     result.metrics[paste0(i.name, "_mse")] = (df.points.evaled$signal - df.points.evaled[, i.name])^2 %>% mean
+#     result.metrics[paste0(i.name, "_cor2")] = cor(df.points.evaled$signal, df.points.evaled[, i.name])^2
+#   }
+#   result.metrics
+# }
 
 # Testing ---------------------------------------------------------------------------------------------------------
 
