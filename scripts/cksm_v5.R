@@ -67,9 +67,8 @@ knots.cd = make_knots(grid.df, N.KNOTS)
 ggplot(epa.df) +
   geom_point(aes(x=x, y=y, color=pm2_5, size=2)) +
   scale_color_gradient2(low='blue', high='red', midpoint=0) +
-  geom_point(data=grid.df, aes(x=x, y=y), alpha=0.25, size=1) +
   geom_point(data=knots.cd, aes(x=x, y=y), shape=4, size=5) +
-  ggtitle('Training data, grid and CD knots')
+  ggtitle('Training data and CD knots')
 
 
 #### Knot Selection: Entropy Maximization ####
@@ -81,9 +80,8 @@ knots.entropy = knots.entropy[, c('x', 'y')]
 ggplot(epa.df) +
   geom_point(aes(x=x, y=y, color=pm2_5, size=2)) +
   scale_color_gradient2(low='blue', high='red', midpoint=0) +
-  geom_point(data=grid.df, aes(x=x, y=y), alpha=0.25, size=1) +
   geom_point(data=knots.entropy, aes(x=x, y=y), shape=4, size=5) +
-  ggtitle('Training data, grid and Entropy knots')
+  ggtitle('Training data and Entropy knots')
 
 
 #### Knot Selection: Fuentes spatial process ####
@@ -92,9 +90,8 @@ knots.fuentes = fit.fuentes.knots(N.KNOTS, X.train, y.train, n.knot_sets=15)
 ggplot(epa.df) +
   geom_point(aes(x=x, y=y, color=pm2_5, size=2)) +
   scale_color_gradient2(low='blue', high='red', midpoint=0) +
-  geom_point(data=grid.df, aes(x=x, y=y), alpha=0.25, size=1) +
   geom_point(data=knots.fuentes, aes(x=x, y=y), shape=4, size=5) +
-  ggtitle('Training data, grid and Fuentes knots')
+  ggtitle('Training data and Fuentes knots')
 
 # Knot Evaluation ------------------------------------------------------------------------------------
 # Fit Fuentes spatial process model using each set of knots

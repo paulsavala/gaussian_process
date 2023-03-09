@@ -288,6 +288,9 @@ fit.fuentes.knots = function(n.knots, X.train, y.train, n.knot_sets=25, radius=0
     }
   }
   
+  # Remove NA values
+  knot_set.info.df = knot_set.info.df[!is.na(knot_set.info.df$se), ]
+  
   # Find the knots using the entropy (SE) and utility defined in her paper
   max_se.idx = knot_set.info.df[knot_set.info.df$se == max(knot_set.info.df$se), 'id']
   max_utility.idx = knot_set.info.df[knot_set.info.df$utility == max(knot_set.info.df$utility), 'id']
@@ -295,12 +298,12 @@ fit.fuentes.knots = function(n.knots, X.train, y.train, n.knot_sets=25, radius=0
   if (max_se.idx == max_utility.idx) {
     best_knots.idx = max_se.idx
   } else {
-    se_diff = knot_set.info.df[max_se.idx, 'se'] - knot_set.info.df[max_utility.idx, 'se']
-    se_sum = knot_set.info.df[max_se.idx, 'se'] + knot_set.info.df[max_utility.idx, 'se']
+    se_diff = knot_set.info.df[knot_set.info.df$id == max_se.idx, 'se'] - knot_set.info.df[knot_set.info.df$id == max_utility.idx, 'se']
+    se_sum = knot_set.info.df[knot_set.info.df$id == max_se.idx, 'se'] + knot_set.info.df[knot_set.info.df$id == max_utility.idx, 'se']
     se_relative_gain = se_diff / se_sum
     
-    utility_diff = knot_set.info.df[max_utility.idx, 'utility'] - knot_set.info.df[max_se.idx, 'utility']
-    utility_sum = knot_set.info.df[max_utility.idx, 'utility'] + knot_set.info.df[max_se.idx, 'utility']
+    utility_diff = knot_set.info.df[knot_set.info.df$id == max_utility.idx, 'utility'] - knot_set.info.df[knot_set.info.df$id == max_se.idx, 'utility']
+    utility_sum = knot_set.info.df[knot_set.info.df$id == max_utility.idx, 'utility'] + knot_set.info.df[knot_set.info.df$id == max_se.idx, 'utility']
     utility_relative_gain = utility_diff / utility_sum
     
     if (se_relative_gain > utility_relative_gain) {
