@@ -101,8 +101,9 @@ subset_spaced = function(df.points, radius.mult) {
   while(nrow(df.points) > 0) {
     i = nrow(new.df)
     df.points = anti_circle_subset(df.points, new.df[i, "x"], new.df[i, "y"], new.df[i, "radius"] * radius.mult)
-    # df.points$pm2_5 = df.points$pm2_5 - mean(df.points$pm2_5)
-    new.df = rbind(new.df, df.points[1, ])  # append subset
+    if (nrow(df.points) > 0) {
+      new.df = rbind(new.df, df.points[1, ])  # append subset
+    }
   }
   new.df[-c(nrow(new.df)), ]  # last row is always NA, this removes it
 }

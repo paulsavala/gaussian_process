@@ -1,6 +1,4 @@
 # Setup -----------------------------------------------------------------------------------------------------------
-                                                            # ctrl+L (clear console output)
-
 # Imports (Graphing)
 library(ggplot2)  # graphing; ggplot() + ...
 library(ggforce)  # graphing circles; geom_circle()
