@@ -44,7 +44,8 @@ epa.df = load_epa_data()
 # California (roughly) ----------------------------------------------------
 # Filter to approximately California
 epa.ca.df = epa.df %>%
-  filter(x < 0.2, y > 0.25, y < 0.75)
+  filter(x < 0.2, y > 0.25, y < 0.75) %>%
+  filter((x<0.125) | (y < 0.4))
 
 epa.ca.df = epa.ca.df[, c('x', 'y', 'pm2_5')]
 
@@ -54,8 +55,8 @@ ggplot(epa.ca.df) +
   ggtitle('California')
 
 # Fit knots on just California
-n_neighbors = 20
-radius_mult = 1
+n_neighbors = 10
+radius_mult = 2
 
 knots.ca.entropy = vkr_base(epa.ca.df, list(n_neighbors=n_neighbors, 
                                             radius_mult=radius_mult, 
@@ -67,9 +68,8 @@ ggplot(epa.ca.df) +
   geom_point(aes(x=x, y=y, color=pm2_5), size=3) +
   scale_color_gradient2(low='blue', high='red', midpoint=0) +
   geom_point(data=knots.ca.entropy, aes(x=x, y=y), shape=4, size=5, stroke=2) +
-  geom_circle(data=knots.ca.entropy, aes(x0=x, y0=y, r=radius)) +
-  ggtitle(paste0('Entropy knots (', n_neighbors, ' neighbors, radius multiplier = ', radius_mult, ')')) +
-  coord_fixed()
+  # geom_circle(data=knots.ca.entropy, aes(x0=x, y0=y, r=radius*radius_mult)) +
+  ggtitle(paste0('Entropy knots (', n_neighbors, ' neighbors, radius multiplier = ', radius_mult, ')'))
 
 
 

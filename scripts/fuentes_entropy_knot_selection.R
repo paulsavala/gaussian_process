@@ -200,91 +200,96 @@ source("scripts/fuentes_GP_model.R")
 
 
 # Fit Fuentes GP on a number of different knots ---------------------------
-fit.fuentes.knots = function(n.knots, X.train, y.train, n.knot_sets=25, radius=0.2) {
+fit.fuentes.knots = function(n.knots, X.train, y.train, n.knot_sets=25, radius=0.2, save_all_steps=FALSE) {
   knot_set.list.X = list()
   knot_set.list.y = list()
   knot_set.info.df = data.frame(id=NA, se=NA, utility=NA)
   
   for (knot_set.idx in 1:n.knot_sets) {
     print(paste0("Fitting knot set ", knot_set.idx, "/", n.knot_sets, "..."))
-    
-    # Create a rough lattice
-    x.lattice = seq(min(X.train$x), max(X.train$x), length.out=100)
-    y.lattice = seq(min(X.train$y), max(X.train$y), length.out=100)
-    
-    grid.df = make.surface.grid(list(x=x.lattice, y=y.lattice)) %>% as.data.frame
-    
-    # Remove lattice points that have no training points to the left/right or above/below
-    rows_to_delete = c()
-    for (i in 1:nrow(grid.df)) {
-      # Get lattice point coordinates
-      r = grid.df[i, ]
-      
-      # Find distance to all training points
-      D = rdist(r, X.train)
-      
-      # Find how many points it's within half the radius from
-      r.idx = which(D < radius / 2)
-      
-      # Remove points that don't have at least 10 neighbors
-      if (length(r.idx) < 10) {
-        rows_to_delete = c(rows_to_delete, i)
-      }
-    }
-    
-    # Remove grid points too far from the training data
-    grid.df = grid.df[-rows_to_delete, ]
+    # 
+    # # Create a rough lattice
+    # x.lattice = seq(min(X.train$x), max(X.train$x), length.out=25)
+    # y.lattice = seq(min(X.train$y), max(X.train$y), length.out=25)
+    # 
+    # grid.df = make.surface.grid(list(x=x.lattice, y=y.lattice)) %>% as.data.frame
+    # 
+    # # Remove lattice points that have no training points to the left/right or above/below
+    # rows_to_delete = c()
+    # for (i in 1:nrow(grid.df)) {
+    #   # Get lattice point coordinates
+    #   r = grid.df[i, ]
+    #   
+    #   # Find distance to all training points
+    #   D = rdist(r, X.train)
+    #   
+    #   # Find how many points it's within half the radius from
+    #   r.idx = which(D < radius / 2)
+    #   
+    #   # Remove points that don't have at least 10 neighbors
+    #   if (length(r.idx) < 10) {
+    #     rows_to_delete = c(rows_to_delete, i)
+    #   }
+    # }
+    # 
+    # # Remove grid points too far from the training data
+    # grid.df = grid.df[-rows_to_delete, ]
     
     # Sample n.knots random knots
-    X.knots.idx = sample(1:nrow(grid.df), size=n.knots)
-    X.knots = grid.df[X.knots.idx, ]
+    X.knots.idx = sample(1:nrow(X.train), size=n.knots, replace=FALSE)
+    X.knots = X.train[X.knots.idx, ]
     
     # Fit Fuentes model hyperparameters
     params = fit.fuentes.gp(X.knots, X.train, y.train)
-    if (!is.null(params)) {
-      preds.df = predict.fuentes.gp(X.knots, X.train, params)
+    preds.df = predict.fuentes.gp(X.knots, X.train, params)
+    
+    # === Calculate utility ===
+    # Calculate median PM 2.5 in neighborhood of knot
+    knot_set.median_pm2_5 = c()
+    for (i in 1:n.knots) {
+      # Get knot coordinates
+      r = X.knots[i, ] %>% matrix(ncol=ncol(X.knots))
       
-      # === Calculate utility ===
-      # Calculate median PM 2.5 in neighborhood of knot
-      knot_set.median_pm2_5 = c()
-      for (i in 1:n.knots) {
-        # Get knot coordinates
-        r = X.knots[i, ] %>% matrix(ncol=ncol(X.knots))
-        
-        # Find distance from all points to current knot
-        D = rdist(r, X.train)
-        
-        # Get points within circle of radius
-        r.idx = which(D < radius)
-        r.nbhd.y = y.train[r.idx]
-        
-        # Calculate median PM 2.5 in this radius
-        r.pm2_5 = median(r.nbhd.y)
-        
-        # Record this median
-        knot_set.median_pm2_5 = c(knot_set.median_pm2_5, r.pm2_5)
-      }
+      # Find distance from all points to current knot
+      D = rdist(r, X.train)
       
-      # Calculate background GP using training data
-      gp.background = generate.gp(X.knots, X.train, y.train)$gp.background
+      # Get points within circle of radius
+      r.idx = which(D < radius)
+      r.nbhd.y = y.train[r.idx]
       
-      # Predict at knots using background GP
-      knot_set.background.preds = simulate.gp(gp.list=NULL, gp.background, X.knots)$sim.background
+      # Calculate median PM 2.5 in this radius
+      r.pm2_5 = median(r.nbhd.y)
       
-      # Store median PM 2.5 and background preds together
-      knot_set.df = data.frame(median_pm2_5=knot_set.median_pm2_5,
-                               median_preds=apply(knot_set.background.preds, 1, median))
-      
-      # Record difference from median in z-score
-      knot_set.df$pm2_5_z = scale(knot_set.df$median_preds - knot_set.df$median_pm2_5)
-      
-      # Record knots in knot_set.list
-      knot_set.list.X[[knot_set.idx]] = X.knots
-      
-      # Record knot set info in knot_set.info.df
-      knot_set.info.df[knot_set.idx, 'id'] = knot_set.idx
-      knot_set.info.df[knot_set.idx, 'se'] = sum(preds.df$se_pred)
-      knot_set.info.df[knot_set.idx, 'utility'] = sum(knot_set.df$pm2_5_z)
+      # Record this median
+      knot_set.median_pm2_5 = c(knot_set.median_pm2_5, r.pm2_5)
+    }
+    
+    # Calculate background GP using training data
+    gp.background = generate.gp(X.knots, X.train, y.train)$gp.background
+    
+    # Predict at knots using background GP
+    knot_set.background.preds = simulate.gp(gp.list=NULL, gp.background, X.knots)$sim.background
+    
+    # Store median PM 2.5 and background preds together
+    knot_set.df = data.frame(median_pm2_5=knot_set.median_pm2_5,
+                             median_preds=apply(knot_set.background.preds, 1, median))
+    
+    # Record difference from median in z-score
+    knot_set.df$pm2_5_z = scale(knot_set.df$median_preds - knot_set.df$median_pm2_5)
+    
+    # Record knots in knot_set.list
+    knot_set.list.X[[knot_set.idx]] = X.knots
+    
+    # Record knot set info in knot_set.info.df
+    knot_set.info.df[knot_set.idx, 'id'] = knot_set.idx
+    knot_set.info.df[knot_set.idx, 'se'] = sum(preds.df$se_pred)
+    knot_set.info.df[knot_set.idx, 'utility'] = sum(knot_set.df$pm2_5_z)
+    
+    if (save_all_steps) {
+      saveRDS(list("knot_set.info.df"=knot_set.info.df,
+                   "knot_set.list.X"=knot_set.list.X,
+                   "knot_set.list.y"=knot_set.list.y),
+              paste0("step_", knot_set.idx, ".rds"))
     }
   }
   

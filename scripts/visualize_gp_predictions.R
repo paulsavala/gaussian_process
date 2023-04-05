@@ -2,7 +2,7 @@ library(ggplot2)
 library(dplyr)
 
 # Lattice for predictions -------------------------------------------------------
-form_grid = function(df, min_radius_to_data, min_points_in_radius=5, num.x=25, num.y=25, plot.grid=FALSE) {
+form_grid = function(df, min_radius_to_data, min_points_in_radius=10, num.x=25, num.y=25, plot.grid=FALSE) {
   x.lattice = seq(min(df$x), max(df$x), length.out=num.x)
   y.lattice = seq(min(df$y), max(df$y), length.out=num.y)
   

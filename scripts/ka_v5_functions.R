@@ -114,14 +114,32 @@ ss_sorted = function(df.points, radius.mult, max.knots, cols.to.sort) {
   for(i in length(cols.to.sort):1) {
     df.points = df.points[order(-df.points[, c(cols.to.sort[i])]), ]  # select highest entropy
   }
-  df.points %>% head(max.knots)
+  df.points # Return all points, sorted by entropy
 }
 
 # TODO
 #' @title Variable Knot Radius Base with no Argument List
 vkr_base_no_list = function(df.points, n.neighbors, radius.mult, max.knots, cols.to.sort) {
   df.metrics = generate_knot_metrics(df.points, n.neighbors)
-  df.metrics %>% ss_sorted(radius.mult, max.knots, cols.to.sort)
+  # Empty data frame to hold knots
+  df.knots = data.frame(matrix(nrow=0, ncol=ncol(df.metrics)))
+  names(df.knots) = names(df.metrics)
+  while ((nrow(df.knots) < max.knots) & (nrow(df.metrics) > 0)) {
+    # Get a single knot
+    df.metrics = df.metrics %>% ss_sorted(radius.mult, max.knots, cols.to.sort)
+    # Store the first knot
+    if (nrow(df.metrics) > 0) {
+      df.knots = rbind(df.knots, df.metrics[1, ])
+      # Remove all neighbors
+      df.metrics = anti_circle_subset(df.metrics, 
+                                      x0=df.metrics[1, 'x'], 
+                                      y0=df.metrics[1, 'y'],
+                                      r=df.metrics[1, 'radius']*radius.mult)
+      # # Recalculate metrics
+      # df.metrics = generate_knot_metrics(df.metrics, n.neighbors) 
+    }
+  }
+  df.knots
 }
 
 # TODO
