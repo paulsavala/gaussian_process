@@ -34,6 +34,7 @@ generate.gp = function(X.knots, X, y) {
   gp.list = list()
   
   for (knot.id in 1:N.KNOTS) {
+    print(knot.id)
     # Get knot coordinates
     r = X.knots[knot.id, ]
     
@@ -46,7 +47,7 @@ generate.gp = function(X.knots, X, y) {
     r.nbhd.y = y[r.idx]
     
     # Fit spatial processes
-    gp.fit = spatialProcess(x=r.nbhd, y=r.nbhd.y)
+    gp.fit = spatialProcess(x=r.nbhd, y=r.nbhd.y, gridARange=seq(from=0.01, to=0.2, by=0.01), cov.params.start=list("aRange"=0.1))
     
     # Store fitted spatial process
     gp.list[[knot.id]] = gp.fit
@@ -151,6 +152,7 @@ fit.fuentes.gp = function(X.knots, X.train, y.train) {
   
   # Fit parameters by minimizing MSE
   params = optim(par=c(1, 1), fn=fit.params, 
+<<<<<<< HEAD
                   method="L-BFGS",
                   lower=c(0, 0),
                   upper=c(10, 1),
@@ -159,6 +161,16 @@ fit.fuentes.gp = function(X.knots, X.train, y.train) {
                   X.knots=X.knots,
                   X.train=X.train,
                   y.train=y.train)
+=======
+        method="L-BFGS",
+        lower=c(0, 0.01),
+        upper=c(10, 1),
+        sim.background=sim.train.background,
+        sim.local.list=sim.train.local.list,
+        X.knots=X.knots,
+        X.train=X.train,
+        y.train=y.train)
+>>>>>>> 748ccd9750fc9055b37a8b34ec3cbd07aea6dfb9
   
   sqrt_alpha = params$par[1]
   ell = params$par[2]
