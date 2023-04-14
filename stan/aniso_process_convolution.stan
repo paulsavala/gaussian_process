@@ -1,24 +1,3 @@
-// functions {
-//   // Two-dimensional convolution
-//   matrix conv2(matrix a, matrix kernel) {
-//     int N = rows(a);
-//     int N_kernel = rows(kernel);
-//     
-//     matrix[N, N] conv_out;
-//     matrix[N, N] kernel_pad = rep_matrix(0, N, N);
-//   
-//     // Pad kernel if necessary
-//     if (N_kernel < N) {
-//       kernel_pad[1:N_kernel, 1:N_kernel] = kernel;
-//     } else {
-//       kernel_pad = kernel;
-//     }
-//     conv_out = get_real(inv_fft2(fft2(a) .* fft2(kernel_pad)));
-//     
-//     return conv_out;
-//   }
-// }
-
 data {
   int<lower=0> N_spatial; // Number of sites at which spatial process is measured
   array[N_spatial] vector[2] spatial_locs; // x-y coordinates of spatial process
@@ -238,4 +217,3 @@ model {
   // vector[N_spatial] z;
   // z = spatial_at_dist * x_j;
 }
-

@@ -10,6 +10,7 @@ library(cmdstanr)
 library(dplyr)    # piping and QoL functions; %>%
 library(scales)   # normalizing lists between 0 and 1; rescale()
 library(stringr)  # manipulating strings
+library(mvtnorm)
 
 # Knot Evaluation
 source("scripts/load_epa_data.R")
