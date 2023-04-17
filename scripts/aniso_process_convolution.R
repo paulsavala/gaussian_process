@@ -33,7 +33,7 @@ epa.ca.df = epa.df %>%
 epa.ca.df = epa.ca.df[, c('x', 'y', 'pm2_5')]
 
 # Sample for easy testing
-epa.ca.sample.idx = sample(1:nrow(epa.ca.df), 20)
+epa.ca.sample.idx = sample(1:nrow(epa.ca.df), 40)
 epa.ca.sample.df = epa.ca.df[epa.ca.sample.idx, ]
 
 
@@ -56,11 +56,10 @@ data = list(N_spatial=N_spatial,
             y_spatial=y_spatial)
 
 # Model
-model = cmdstan_model('stan/aniso_process_convolution.stan')
+model = cmdstan_model('stan/aniso_process_convolution_latent.stan')
 fit = model$sample(data=data,
                    parallel_chains=4,
-                   iter_warmup=1000,
-                   max_treedepth=15)
+                   iter_warmup=2000)
 
 
 # Visualizing transformation ----------------------------------------------
@@ -79,11 +78,11 @@ normal_pdf = function(sigma=matrix(c(1, 0, 0, 1), byrow=T, nrow=2), plot=TRUE) {
 }
 
 # === Transformation matrix using foci ===
-A = pi
-psi = c(0, 0)
-alpha = 0
+A = 0.1
+psi = c(1.3, 1.3)
 
-transform_mat.foci = function(A, psi, alpha) {
+transform_mat.foci = function(psi, A=0.1, make_symmetric=TRUE) {
+  alpha = atan(psi[2]/psi[1])
   psi.norm = norm(psi, type='2')
   term1 = sqrt(4*A**2 + psi.norm**4*pi**2) / (2*pi)
   term2 = psi.norm**2 / 2
@@ -94,7 +93,11 @@ transform_mat.foci = function(A, psi, alpha) {
                         byrow=TRUE, nrow=2)
   
   # return(scale_mat %*% rotation_mat)
-  return(rotation_mat %*% scale_mat)
+  mat = rotation_mat %*% scale_mat
+  if (make_symmetric) {
+    mat = mat %*% t(mat)
+  }
+  return(mat)
 }
 
 # === Correlation function rho ===
