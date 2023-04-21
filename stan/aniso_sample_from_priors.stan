@@ -1,8 +1,6 @@
 data {
   int<lower=0> N_spatial; // Number of sites at which spatial process is measured
   array[N_spatial] vector[2] spatial_locs; // x-y coordinates of spatial process
-  real A; // (Fixed) area of each ellipse
-  vector[N_spatial] y_spatial; // Measured value of spatial process at each site
 }
 
 transformed data {
@@ -15,16 +13,17 @@ transformed data {
 parameters {
   real mu; // Intercept
   // real<lower=0> lambda_psi; // Precision of ellipse process
-  real<lower=0> lambda_y; // Precision of model error term
-  real<lower=0> lambda_z; // Precision of spatial error term
-  real<lower=0> sigma_z; // Variance of spatial process
+  // real<lower=0> lambda_y; // Precision of model error term
+  // real<lower=0> lambda_z; // Precision of spatial error term
+  // real<lower=0> sigma_z; // Variance of spatial process
   real<lower=0> sigma_psi; // Variance of foci process
-  real<lower=0> nugget_z;
-  real<lower=0> tau_z; // Range of spatial process
+  real<lower=0> nugget_psi;
+  // real<lower=0> tau_z; // Range of spatial process
   vector<lower=0>[N_spatial] psi_x; // x component of foci
   vector<lower=0>[N_spatial] psi_y; // y component of foci
   real<lower=0> tau_psi; // Range of ellipse dependence
-  vector[N_spatial] eta;
+  // vector[N_spatial] eta;
+  // vector[N_spatial] y_spatial; // Measured value of spatial process at each site
 }
 
 transformed parameters {
@@ -32,29 +31,29 @@ transformed parameters {
 
 model {
   // Priors
-  lambda_y ~ cauchy(0, 2.5);
-  lambda_z ~ cauchy(0, 2.5);
-  mu ~ std_normal();
+  // lambda_y ~ cauchy(0, 2.5);
+  // lambda_z ~ cauchy(0, 2.5);
+  // mu ~ std_normal();
   // lambda_psi ~ gamma(a, b);
-  sigma_z ~ cauchy(0, 2.5);
-  sigma_psi ~ cauchy(0, 2.5);
-  tau_z ~ cauchy(0, 2.5);
-  tau_psi ~ cauchy(0, 2.5);
-  nugget_z ~ cauchy(0, 2.5);
-  
+  // sigma_z ~ cauchy(0, 2.5);
+  sigma_psi ~ cauchy(0, 0.1);
+  // tau_z ~ cauchy(0, 2.5);
+  tau_psi ~ cauchy(0, 0.1);
+  nugget_psi ~ cauchy(0, 1);
+
   // Covariance matrix for foci
   // Used in multi_normal priors for foci
   matrix[N_spatial, N_spatial] R_psi = gp_exp_quad_cov(spatial_locs, sigma_psi, tau_psi);
   for (i in 1:N_spatial) {
-    R_psi[i, i] = R_psi[i, i] + nugget_z;
+    R_psi[i, i] = R_psi[i, i] + nugget_psi;
   }
-  
+
   psi_x ~ multi_normal(rep_vector(0., N_spatial), R_psi);
   psi_y ~ multi_normal(rep_vector(0., N_spatial), R_psi);
-  
+
   // Hold covariance matrices at each site
   array[N_spatial] matrix[2, 2] Sigma_array;
-  
+
   // Construct kernel covariance matrices at each site (using foci)
   array[N_spatial] vector[2] spatial_locs_transformed;
   for (i in 1:N_spatial) {
@@ -63,7 +62,7 @@ model {
     // Term 1 on diagonal of kernel covariance matrix
     real term1 = sqrt(4*square(A) + pow(psi_norm, 4) * square(pi())) / 2*pi();
     // Term 2 on diagonal of kernel covariance matrix
-    real term2 = square(psi_norm) / 2;
+    real term2 = square(psi_norm) / 0.25;
     // Rotation (give in terms of foci)
     real alpha = atan(psi_y[i] / psi_x[i]);
     // Component of covariance matrix that handles ellipse scaling
@@ -71,32 +70,32 @@ model {
     // Component of covariance matrix that handles ellipse rotation
     matrix[2, 2] rotation = [[cos(alpha), sin(alpha)], [-sin(alpha), cos(alpha)]];
     // Full kernel covariance matrix (square root)
-    matrix[2, 2] Sigma_sqrt = tau_z * rotation * ellipse_scale ;
+    matrix[2, 2] Sigma_sqrt = 1 * rotation * ellipse_scale;
     // Full kernel covariance matrix (matrix times its transpose)
     // Equivalent to Sigma_sqrt * Sigma_sqrt'
     Sigma_array[i] = tcrossprod(Sigma_sqrt);
     // Transform each location according to its elliptical covariance matrix
     spatial_locs_transformed[i] = Sigma_array[i] * spatial_locs[i];
   }
-  
-  // Latent variable formulation
-  // Reference: https://mc-stan.org/docs/stan-users-guide/fit-gp.html
-  vector[N_spatial] f;
-  {
-    // Compute covariance matrix between transformed coordinates (simplified version)
-    matrix[N_spatial, N_spatial] R_z = gp_exp_quad_cov(spatial_locs_transformed, sigma_z, tau_z);
 
-    // diagonal elements
-    for (n in 1:N_spatial) {
-      R_z[n, n] = R_z[n, n] + lambda_z;
-    }
-
-    matrix[N_spatial, N_spatial] R_z_chol = cholesky_decompose(R_z);
-    f = R_z_chol * eta;
-  }
-  
-  eta ~ std_normal();
-  
-  // === Sampling from linear model ===
-  y_spatial ~ normal(mu + f, lambda_y);
+  // // Latent variable formulation
+  // // Reference: https://mc-stan.org/docs/stan-users-guide/fit-gp.html
+  // vector[N_spatial] f;
+  // {
+  //   // Compute covariance matrix between transformed coordinates (simplified version)
+  //   matrix[N_spatial, N_spatial] R_z = gp_exp_quad_cov(spatial_locs_transformed, sigma_z, tau_z);
+  // 
+  //   // diagonal elements
+  //   for (n in 1:N_spatial) {
+  //     R_z[n, n] = R_z[n, n] + lambda_z;
+  //   }
+  // 
+  //   matrix[N_spatial, N_spatial] R_z_chol = cholesky_decompose(R_z);
+  //   f = R_z_chol * eta;
+  // }
+  // 
+  // eta ~ std_normal();
+  // 
+  // // === Sampling from linear model ===
+  // y_spatial ~ normal(mu + f, lambda_y);
 }
