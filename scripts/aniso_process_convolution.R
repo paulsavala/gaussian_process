@@ -54,7 +54,7 @@ ggplot(epa.df) +
 
 
 # Stan model fitting ------------------------------------------------------
-prepare_data = function(df, num_knots=NULL, sample_pct=1, plot=FALSE) {
+prepare_data = function(df, num_knots=NULL, sample_pct=1, plot=FALSE, fixed_rank_dim=NULL) {
   # Reduce sample size if needed
   if (sample_pct < 1) {
     df.sample.idx = sample(1:nrow(df), as.integer(sample_pct*nrow(df)))
@@ -84,6 +84,11 @@ prepare_data = function(df, num_knots=NULL, sample_pct=1, plot=FALSE) {
     data$knot_locs = df.knots[, c('x', 'y')]
   }
   
+  # Fixed rank dimension (if using)
+  if (!is.null(fixed_rank_dim)) {
+    data$fixed_rank_dim = fixed_rank_dim
+  }
+  
   if (plot) {
     g = ggplot(df) +
       geom_point(aes(x=x, y=y, fill=pm2_5), size=3, pch=21, color='black', alpha=0.1) +
@@ -103,7 +108,7 @@ prepare_data = function(df, num_knots=NULL, sample_pct=1, plot=FALSE) {
 
 
 # Extract ellipses for plotting ------------------------------------------
-extract_ellipses = function(df, df.all=NULL, fit, foci=TRUE, plot=TRUE, scale_ellipses=1, num_ellipses=NULL, knots=NULL, psi_suffix='') {
+extract_ellipses = function(df, df.all=NULL, fit, foci=TRUE, plot=TRUE, scale_ellipses=1, num_ellipses=NULL, knots=NULL, psi_suffix='', return_df=FALSE) {
   psi_x_col = paste0('psi_x', psi_suffix)
   psi_y_col = paste0('psi_y', psi_suffix)
   
@@ -167,6 +172,10 @@ extract_ellipses = function(df, df.all=NULL, fit, foci=TRUE, plot=TRUE, scale_el
     }
     show(g)
   }
+  
+  if (return_df) {
+    return(df)
+  }
 }
 
 
@@ -183,15 +192,20 @@ extract_ellipses = function(df, df.all=NULL, fit, foci=TRUE, plot=TRUE, scale_el
 
 
 # Fitting knot model ------------------------------------------------------
-model.knots = cmdstan_model('stan/aniso_process_axes_latent_knots.stan')
+model.knots = cmdstan_model('stan/aniso_process_axes_latent_knots_spectral_profile.stan')
 
 # Data
-data.knots = prepare_data(epa.df, num_knots=10, sample_pct=0.25, plot=T)
+data.knots = prepare_data(epa.df, num_knots=15, sample_pct=0.32, plot=T, fixed_rank_dim=as.integer(sqrt(nrow(epa.df))))
 
 fit.knots = model.knots$sample(data=data.knots,
                                 parallel_chains=4,
-                                iter_warmup=1000,
-                                max_treedepth=10)
+                                iter_warmup=2000,
+                                max_treedepth=10,
+                                init=function() list(sigma_z=0.1,
+                                                     ell_z=0.1,
+                                                     sigma_interp=0.1,
+                                                     ell_interp=0.1,
+                                                     lambda_y=0.1))
 
 data.knots.spatial.df = cbind(data.knots$spatial_locs, data.knots$y_spatial)
 names(data.knots.spatial.df) = c('x', 'y', 'pm2_5')
@@ -201,12 +215,14 @@ data.knots.knots.df = data.knots$knot_locs
 extract_ellipses(data.knots.spatial.df, 
                  fit=fit.knots, 
                  foci=F, 
-                 scale_ellipses=15, 
-                 knots=data.knots.knots.df, 
+                 scale_ellipses=7, 
+                 # knots=data.knots.knots.df,
                  psi_suffix="_all")
-extract_ellipses(epa.df, 
+
+ellipse_df = extract_ellipses(data.knots.spatial.df, 
                  fit=fit.knots, 
                  foci=F, 
-                 scale_ellipses=10, 
-                 psi_suffix="_all")
+                 scale_ellipses=7, 
+                 psi_suffix="_all",
+                 return_df=TRUE)
 

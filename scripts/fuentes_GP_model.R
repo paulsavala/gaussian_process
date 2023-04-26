@@ -152,7 +152,6 @@ fit.fuentes.gp = function(X.knots, X.train, y.train) {
   
   # Fit parameters by minimizing MSE
   params = optim(par=c(1, 1), fn=fit.params, 
-<<<<<<< HEAD
                   method="L-BFGS",
                   lower=c(0, 0),
                   upper=c(10, 1),
@@ -161,16 +160,6 @@ fit.fuentes.gp = function(X.knots, X.train, y.train) {
                   X.knots=X.knots,
                   X.train=X.train,
                   y.train=y.train)
-=======
-        method="L-BFGS",
-        lower=c(0, 0.01),
-        upper=c(10, 1),
-        sim.background=sim.train.background,
-        sim.local.list=sim.train.local.list,
-        X.knots=X.knots,
-        X.train=X.train,
-        y.train=y.train)
->>>>>>> 748ccd9750fc9055b37a8b34ec3cbd07aea6dfb9
   
   sqrt_alpha = params$par[1]
   ell = params$par[2]

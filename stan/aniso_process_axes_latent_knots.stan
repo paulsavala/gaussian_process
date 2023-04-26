@@ -6,15 +6,27 @@ functions {
       + (p - 1) * log(x)
       - (a * x + b / x) * 0.5;
  }
+ 
+ real partial_sum_lm_lpdf(array[] real y_spatial_slice,
+                  int start, int end,
+                  real mu,
+                  vector f,
+                  real lambda_y) {
+    return normal_lupdf(y_spatial_slice | mu + f[start:end], lambda_y);
+  }
+  
+  real partial_sum_spatial_transform()
 }
 
 data {
   int<lower=0> N_knots;
   array[N_knots] vector[2] knot_locs;
   
+  int<lower=0> fixed_rank_dim; // Dimension to project covariance matrix into
+  
   int<lower=0> N_spatial; // Number of sites at which spatial process is measured
   array[N_spatial] vector[2] spatial_locs; // x-y coordinates of spatial process
-  vector[N_spatial] y_spatial; // Measured value of spatial process at each site
+  array[N_spatial] real y_spatial; // Measured value of spatial process at each site
 }
 
 transformed data {
@@ -28,6 +40,12 @@ transformed data {
       max_dist = max([max_dist, temp_dist]);
     }
   }
+  
+  // fixed_rank_dim-dimension projection matrix
+  matrix[N_spatial, fixed_rank_dim] Omega = to_matrix(normal_rng(rep_vector(0, N_spatial*fixed_rank_dim), 1./fixed_rank_dim), N_spatial, fixed_rank_dim);
+
+  // Left spectral factor of projection matrix
+  matrix[fixed_rank_dim, N_spatial] Omega_Phi = svd_U(Omega)';
 }
 
 parameters {
@@ -80,8 +98,8 @@ model {
   // nugget_z ~ normal(0, 0.1);
   // nugget_z ~ inv_gamma(3, 0.1);
   sigma_z ~ std_normal();
-  // ell_z ~ inv_gamma(3, 0.1);
-  target += generalized_inverse_gaussian_lpdf(ell_z | -2, 1, 0.1);
+  ell_z ~ inv_gamma(3, 0.1);
+  // target += generalized_inverse_gaussian_lpdf(ell_z | -2, 1, 0.1);
   // ell_z ~ normal(0, max_dist/3);
   
   eta ~ std_normal();
@@ -104,9 +122,15 @@ model {
   vector[N_spatial] psi_x_all = W_interp * psi_x;
   vector[N_spatial] psi_y_all = W_interp * psi_y;
 
-  // Construct kernel covariance matrices at each site
+  // Compute rotations (sampling both psi_x and psi_y near zero is problematic)
   vector[N_spatial] alpha = atan(psi_y_all ./ psi_x_all);
-
+  for (i in 1:N_spatial) {
+    if (is_nan(alpha[i])) {
+      alpha[i] = 0;
+    }
+  }
+  
+  // Construct kernel covariance matrices at each site
   array[N_spatial] vector[2] spatial_locs_transformed;
   for (i in 1:N_spatial) {
     // // Component of covariance matrix that handles ellipse scaling
@@ -121,6 +145,14 @@ model {
     // Sigma_array[i] = tcrossprod(Sigma_sqrt);
     // Transform each location according to its elliptical covariance matrix
     spatial_locs_transformed[i] = tcrossprod(tau_psi * [[sqrt(psi_x_all[i])*cos(alpha[i]), sqrt(psi_y_all[i])*sin(alpha[i])], [-sqrt(psi_x_all[i])*sin(alpha[i]), sqrt(psi_y_all[i])*cos(alpha[i])]]) * spatial_locs[i];
+    
+    // if (is_nan(spatial_locs_transformed[i][1]) || is_nan(spatial_locs_transformed[i][2])) {
+    //   print(psi_x_all[i]);
+    //   print(psi_y_all[i]);
+    //   print(alpha[i]);
+    //   print(tau_psi);
+    //   print("=========");
+    // }
   }
 
   // Latent variable formulation
@@ -129,19 +161,34 @@ model {
   {
     // Compute covariance matrix between transformed coordinates (simplified version)
     matrix[N_spatial, N_spatial] R_z = gp_exp_quad_cov(spatial_locs_transformed, sigma_z, ell_z);
-
-    // diagonal elements
+    
+    // === Banerjee linear projection method ===
+    // Project down to lower dimension
+    matrix[N_spatial, N_spatial] C_lp = (Omega_Phi * R_z)' / quad_form(R_z, Omega_Phi') * (Omega_Phi * R_z);
+    // matrix[N_spatial, N_spatial] C_lp = quad_form(Omega_Phi * R_z, solve(Omega_Phi * R_z * Omega_Phi'));
+    // matrix[N_spatial, fixed_rank_dim] C_lp = (Omega_Phi * R_z)' * solve(Omega_Phi * R_z * Omega_Phi') * Omega_Phi * R_z;
+    
+    // Add a nugget term (correct for variance)
+    C_lp = add_diag(C_lp, diagonal(R_z) - diagonal(C_lp));
     for (n in 1:N_spatial) {
-      R_z[n, n] = R_z[n, n] + 0.1;
+      C_lp[n, n] = C_lp[n, n] + 0.01;
     }
+    
+    // Cholesky decomposition for later efficiency
+    matrix[N_spatial, N_spatial] C_lp_chol = cholesky_decompose(C_lp);
+    // === End linear projection method ===
 
-    // Latent variable formulation uses Cholesky decomposition
-    matrix[N_spatial, N_spatial] R_z_chol = cholesky_decompose(R_z);
-    f = R_z_chol * eta;
+    // Latent variable formulation uses Cholesky decomposition (use this _or_ Banerjee linear projection)
+    // matrix[N_spatial, N_spatial] R_z_chol = cholesky_decompose(R_z);
+    f = C_lp_chol * eta;
   }
 
   // // === Sampling from linear model ===
-  y_spatial ~ normal(mu + f, lambda_y);
+  // y_spatial ~ normal(mu + f, lambda_y);
+  int grainsize = 1;
+  target += reduce_sum(partial_sum_lm_lpdf, y_spatial, 
+                        grainsize,
+                        mu, f, lambda_y);
 }
 
 generated quantities {
