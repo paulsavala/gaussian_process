@@ -23,38 +23,10 @@ ggplot(epa.df) +
   geom_point(aes(x=x, y=y, fill=pm2_5), size=3, pch=21, color='black') +
   scale_fill_gradient2(low='blue', high='red', midpoint=0)
 
-# # Sample of US ------------------------------------------------------------
-# epa.sample.idx = sample(1:nrow(epa.df), 100)
-# epa.sample.df = epa.df[epa.sample.idx, ]
-# 
-# ggplot(epa.df) +
-#   geom_point(aes(x=x, y=y, fill=pm2_5), size=3, pch=21, color='black', alpha=0.1) +
-#   geom_point(data=epa.sample.df, aes(x=x, y=y, fill=pm2_5), size=3, pch=21, color='black') +
-#   scale_fill_gradient2(low='blue', high='red', midpoint=0) +
-#   ggtitle('US (sample points highlighted)')
-#
-# # California (roughly) ----------------------------------------------------
-# # Filter to approximately California
-# epa.ca.df = epa.df %>%
-#   dplyr::filter(x < 0.2, y > 0.25, y < 0.75) %>%
-#   dplyr::filter((x < 0.125) | (y < 0.4))
-# 
-# epa.ca.df = epa.ca.df[, c('x', 'y', 'pm2_5')]
-# 
-# # Sample for easy testing
-# epa.ca.sample.idx = sample(1:nrow(epa.ca.df), 100)
-# epa.ca.sample.df = epa.ca.df[epa.ca.sample.idx, ]
-# 
-# # Plot CA and sample
-# ggplot(epa.ca.df) +
-#   geom_point(aes(x=x, y=y, fill=pm2_5), size=3, pch=21, color='black', alpha=0.1) +
-#   geom_point(data=epa.ca.sample.df, aes(x=x, y=y, fill=pm2_5), size=3, pch=21, color='black') +
-#   scale_fill_gradient2(low='blue', high='red', midpoint=0) +
-#   ggtitle('California (sample points highlighted)')
-
 
 # Stan model fitting ------------------------------------------------------
-prepare_data = function(df, num_knots=NULL, sample_pct=1, plot=FALSE, fixed_rank_dim=NULL) {
+# Prepare data for the stan model
+prepare_data = function(df, M, num_knots=NULL, sample_pct=1, plot=FALSE) {
   # Reduce sample size if needed
   if (sample_pct < 1) {
     df.sample.idx = sample(1:nrow(df), as.integer(sample_pct*nrow(df)))
@@ -72,7 +44,8 @@ prepare_data = function(df, num_knots=NULL, sample_pct=1, plot=FALSE, fixed_rank
   # Package data
   data = list(N_spatial=N_spatial,
               spatial_locs=spatial_locs,
-              y_spatial=y_spatial)
+              y_spatial=y_spatial,
+              M=M)
   
   # Include knots if needed
   if (!is.null(num_knots)) {
@@ -82,11 +55,6 @@ prepare_data = function(df, num_knots=NULL, sample_pct=1, plot=FALSE, fixed_rank
     
     data$N_knots = nrow(df.knots)
     data$knot_locs = df.knots[, c('x', 'y')]
-  }
-  
-  # Fixed rank dimension (if using)
-  if (!is.null(fixed_rank_dim)) {
-    data$fixed_rank_dim = fixed_rank_dim
   }
   
   if (plot) {
@@ -108,34 +76,14 @@ prepare_data = function(df, num_knots=NULL, sample_pct=1, plot=FALSE, fixed_rank
 
 
 # Extract ellipses for plotting ------------------------------------------
-extract_ellipses = function(df, df.all=NULL, fit, foci=TRUE, plot=TRUE, scale_ellipses=1, num_ellipses=NULL, knots=NULL, psi_suffix='', return_df=FALSE) {
+# After the model is fit, extract (and optionally plot) the ellipses
+extract_ellipses = function(df, df.all=NULL, fit, plot=TRUE, scale_ellipses=1, num_ellipses=NULL, knots=NULL, psi_suffix='', return_df=FALSE) {
   psi_x_col = paste0('psi_x', psi_suffix)
   psi_y_col = paste0('psi_y', psi_suffix)
   
-  if (foci) {
-    foci.x = fit$summary(variables = psi_x_col)$median
-    foci.y = fit$summary(variables = psi_y_col)$median
-    rotation = atan(foci.y / foci.x)
-    
-    focus = c()
-    for (i in 1:length(rotation)) {
-      # Rotate foci backwards to get focus
-      neg_rot_mat = matrix(c(cos(-rotation[i]), -sin(-rotation[i]), sin(-rotation[i]), cos(-rotation[i])),
-                           byrow=TRUE, nrow=2)
-      
-      focus.vec = neg_rot_mat %*% t(cbind(foci.x[i], foci.y[i]))
-      # Extract just the x variable, since the vector has been rotated to lie on the x-axis
-      focus = c(focus, focus.vec[1, 1])
-    }
-    
-    # Major and minor axes (equations from Higdon's paper, I _can_ duplicate those equations)
-    a = sqrt(sqrt(4*data$A**2 + focus**4*pi**2) / (2*pi) + focus**2/2)
-    b = sqrt(sqrt(4*data$A**2 + focus**4*pi**2) / (2*pi) - focus**2/2)
-  } else {
-    a = fit$summary(variables = psi_x_col)$median
-    b = fit$summary(variables = psi_y_col)$median
-    rotation = atan(b / a)
-  }
+  a = fit$summary(variables = psi_x_col)$median
+  b = fit$summary(variables = psi_y_col)$median
+  rotation = atan(b / a)
   
   # Append rotations and ellipse major/minor axes to original data
   df$a = a
@@ -145,7 +93,6 @@ extract_ellipses = function(df, df.all=NULL, fit, foci=TRUE, plot=TRUE, scale_el
   # If knots are supplied, extract their axes/rotation for plotting
   if (!is.null(knots)) {
     knots.df = merge(knots, df, by=c('x', 'y'), all.x=TRUE)
-    # stopifnot(nrow(knots.df) == nrow(knots))
   }
   
   # Plot ellipses on map
@@ -178,24 +125,11 @@ extract_ellipses = function(df, df.all=NULL, fit, foci=TRUE, plot=TRUE, scale_el
   }
 }
 
-
-# Fitting model ---------------------------------------
-# model = cmdstan_model('stan/aniso_process_axes_latent.stan')
-# # Data
-# data = prepare_data(epa.sample.df)
-# fit = model$sample(data=data,
-#                    parallel_chains=4,
-#                    iter_warmup=1000,
-#                    max_treedepth=15)
-# 
-# extract_ellipses(epa.sample.df, epa.df, fit, foci=F, scale_ellipses=7, num_ellipses=10)
-
-
 # Fitting knot model ------------------------------------------------------
 model.knots = cmdstan_model('stan/aniso_process_axes_latent_knots_spectral_profile.stan')
 
 # Data
-data.knots = prepare_data(epa.df, num_knots=15, sample_pct=0.32, plot=T, fixed_rank_dim=as.integer(sqrt(nrow(epa.df))))
+data.knots = prepare_data(epa.df, M=5, num_knots=20, sample_pct=0.52, plot=T)
 
 fit.knots = model.knots$sample(data=data.knots,
                                 parallel_chains=4,
@@ -207,22 +141,22 @@ fit.knots = model.knots$sample(data=data.knots,
                                                      ell_interp=0.1,
                                                      lambda_y=0.1))
 
+# Extract the locations and data
 data.knots.spatial.df = cbind(data.knots$spatial_locs, data.knots$y_spatial)
 names(data.knots.spatial.df) = c('x', 'y', 'pm2_5')
-
 data.knots.knots.df = data.knots$knot_locs
 
+# Plot the ellipses
 extract_ellipses(data.knots.spatial.df, 
                  fit=fit.knots, 
-                 foci=F, 
-                 scale_ellipses=7, 
-                 # knots=data.knots.knots.df,
+                 scale_ellipses=10, 
+                 knots=data.knots.knots.df,
                  psi_suffix="_all")
 
+# Extract the data frame with ellipse data
 ellipse_df = extract_ellipses(data.knots.spatial.df, 
                  fit=fit.knots, 
-                 foci=F, 
-                 scale_ellipses=7, 
+                 scale_ellipses=10, 
                  psi_suffix="_all",
                  return_df=TRUE)
 

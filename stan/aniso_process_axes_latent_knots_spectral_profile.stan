@@ -7,20 +7,26 @@ functions {
       - (a * x + b / x) * 0.5;
  }
  
- matrix approx_L(int M, real scale, real[] xt, real sigma, real l) {
-    int N = size(xt);
+ matrix approx_L(int M, real scale, vector x, real sigma, real l) {
+    int N = size(x);
   
-    real epsilon = sqrt(1 / (2 * l^2));
-    real alpha = 1 / scale;
-    real beta = (1.0 + (2.0 * epsilon / alpha)^2)^0.25;
-    real delta = sqrt(alpha^2 * (beta^2 - 1.0) / 2.0);
+    real epsilon = sqrt(1 / (2 * l^2)); // Chosen freely (pg. 5), , but is probably just the scale parameter (different form for notational reasons?)
+    real alpha = 1 / scale; // Chosen freely (pg. 5)
+    real beta = (1.0 + (2.0 * epsilon / alpha)^2)^0.25; // Equation 3.4
+    real delta = sqrt(alpha^2 * (beta^2 - 1.0) / 2.0); // Equation 3.4
     
     vector[N] Ht[M];
-    vector[N] x = to_vector(xt);
+    // vector[N] x = to_vector(xt);
     matrix[N, M] Htt;
-    vector[N] xp = alpha * beta * x;
-    real f = sqrt(epsilon^2 / (alpha^2 + delta^2 + epsilon^2));
+    vector[N] xp = alpha * beta * x; // Term inside Hermite polynomials (pg. 4)
+    real f = sqrt(epsilon^2 / (alpha^2 + delta^2 + epsilon^2)); // Second term in equation 3.5b (pre-computed for simplicity)
     
+    // Calculate first M eigenfunctions phi_n
+    // phi_n(x) = sqrt(beta / (2^(n-1) * (n-1)!)) * exp(-delta^2 * x^2) * H_n(xp)
+    // lambda_n = sqrt(alpha^2 / (alpha^2 + delta^2 + epsilon^2)) * (epsilon^2 / (alpha^2 + delta^2 + epsilon^2))^(n-1)
+    
+    // phi_1(x) = sqrt(beta) * exp(-delta^2 * x^2)
+    // lamda_1 = sqrt(alpha^2 / (alpha^2 + delta^2 + epsilon^2))
     Ht[1] = sqrt(sqrt(alpha^2 / (alpha^2 + delta^2 + epsilon^2))) * sqrt(beta) * exp(-delta^2 * x .* x);
     Ht[2] = f * sqrt(2.0) * xp .* Ht[1];
     for(n in 3:M) {
@@ -39,7 +45,7 @@ data {
   int<lower=0> N_knots;
   array[N_knots] vector[2] knot_locs;
   
-  int<lower=0> fixed_rank_dim; // Dimension to project covariance matrix into
+  real M; // Number of eigenfunctions to use
   
   int<lower=0> N_spatial; // Number of sites at which spatial process is measured
   array[N_spatial] vector[2] spatial_locs; // x-y coordinates of spatial process
@@ -49,14 +55,15 @@ data {
 transformed data {
   // Compute the maximum distance between any two points. This is used
   // for spatial dependence priors.
-  real max_dist = 0;
-  real temp_dist;
-  for (i in 1:N_spatial) {
-    for (j in (i+1):N_spatial) {
-      temp_dist = distance(spatial_locs[i], spatial_locs[j]);
-      max_dist = max([max_dist, temp_dist]);
-    }
-  }
+  real max_dist = 1;
+  // real max_dist = 0;
+  // real temp_dist;
+  // for (i in 1:N_spatial) {
+  //   for (j in (i+1):N_spatial) {
+  //     temp_dist = distance(spatial_locs[i], spatial_locs[j]);
+  //     max_dist = max([max_dist, temp_dist]);
+  //   }
+  // }
 }
 
 parameters {
@@ -84,7 +91,7 @@ parameters {
   real<lower=0> global_scale; // Low-rank expansion scale factor
   
   // Overall spatial process
-  vector[10] eta;
+  vector[M] eta;
   real<lower=0> lambda_y; // Precision of model error term
 }
 
@@ -98,6 +105,68 @@ transformed parameters {
     for (i in 1:N_knots) {
       R_psi[i, i] = R_psi[i, i] + nugget_psi;
     }
+  }
+  
+  // Compute rotations (sampling both psi_x and psi_y near zero is problematic)
+  vector[N_knots] alpha = atan(psi_y ./ psi_x);
+  for (i in 1:N_knots) {
+    if (is_nan(alpha[i])) {
+      alpha[i] = 0;
+    }
+  }
+  
+  // Compute rotation matrices
+  // array[N_spatial] matrix[2, 2] Sigma_sqrts;
+  vector[N_knots] spatial_locs_transformed_norm;
+  profile("Sigma_sqrts") {
+    for (i in 1:N_knots) {
+      matrix[2, 2] rotation = [[cos(alpha[i]), sin(alpha[i])], [-sin(alpha[i]), cos(alpha[i])]];
+      row_vector[2] ellipse_scale = [psi_x[i], psi_y[i]];
+      // Full kernel covariance matrix (square root)
+      // tau_psi * diag_post_multiply(rotation, ellipse_scale);
+      spatial_locs_transformed_norm[i] = norm2(tau_psi * diag_post_multiply(rotation, ellipse_scale) * knot_locs[i]);
+    }
+  }
+  
+  matrix[N_spatial, N_knots] W_interp;
+  vector[N_spatial] psi_x_all;
+  vector[N_spatial] psi_y_all;
+  vector[N_spatial] spatial_locs_transformed_norm_all;
+  
+  profile("W_interp") {
+    W_interp = gp_exp_quad_cov(spatial_locs, knot_locs, sigma_interp, ell_interp);
+    
+    psi_x_all = W_interp * psi_x;
+    psi_y_all = W_interp * psi_y;
+    spatial_locs_transformed_norm_all = W_interp * spatial_locs_transformed_norm;
+  }
+  
+  // Construct kernel covariance matrices at each site
+  // array[N_spatial] real spatial_locs_transformed_norm;
+  // profile("spatial_transform") {
+  //   for (i in 1:N_spatial) {
+  //     // // Component of covariance matrix that handles ellipse scaling
+  //     // row_vector[2] ellipse_scale = [psi_x_all[i], psi_y_all[i]];
+  //     // // Component of covariance matrix that handles ellipse rotation
+  //     // matrix[2, 2] rotation = [[cos(alpha[i]), sin(alpha[i])], [-sin(alpha[i]), cos(alpha[i])]];
+  //     // Full kernel covariance matrix (square root)
+  //     // matrix[2, 2] Sigma_sqrt = tau_psi * diag_post_multiply(rotations[i], ellipse_scale);
+  //     // matrix[2, 2] Sigma_sqrt = tau_psi * [[sqrt(psi_x_all[i])*cos(alpha[i]), sqrt(psi_y_all[i])*sin(alpha[i])], [-sqrt(psi_x_all[i])*sin(alpha[i]), sqrt(psi_y_all[i])*cos(alpha[i])]];
+  //     // Full kernel covariance matrix (matrix times its transpose)
+  //     // Equivalent to Sigma_sqrt * Sigma_sqrt'
+  //     // matrix[2, 2] Sigma = tcrossprod(Sigma_sqrt);
+  //     // matrix[2, 2] Sigma = tcrossprod(tau_psi * [[sqrt(psi_x_all[i])*cos(alpha[i]), sqrt(psi_y_all[i])*sin(alpha[i])], [-sqrt(psi_x_all[i])*sin(alpha[i]), sqrt(psi_y_all[i])*cos(alpha[i])]]);
+  //     // Transform each location according to its elliptical covariance matrix
+  //     // spatial_locs_transformed[i] = tau_psi * [[sqrt(psi_x_all[i])*cos(alpha[i]), sqrt(psi_y_all[i])*sin(alpha[i])], [-sqrt(psi_x_all[i])*sin(alpha[i]), sqrt(psi_y_all[i])*cos(alpha[i])]] * spatial_locs[i];
+  //     // spatial_locs_transformed[i] = tau_psi * [sqrt(psi_x_all[i])*cos(alpha[i])*spatial_locs[i][1] + sqrt(psi_y_all[i])*sin(alpha[i])*spatial_locs[i][2], -sqrt(psi_x_all[i])*sin(alpha[i])*spatial_locs[i][1] + sqrt(psi_y_all[i])*cos(alpha[i])*spatial_locs[i][2]]'
+  //     spatial_locs_transformed_norm[i] = norm2(Sigma_sqrts[i] * spatial_locs[i]);
+  //   }
+  // }
+
+  // Reference: // Reference: https://discourse.mc-stan.org/t/approximate-gps-with-spectral-stuff/1041
+  vector[N_spatial] f;
+  profile("f") {
+    f = approx_L(M, global_scale, spatial_locs_transformed_norm_all, sigma_z, ell_z) * eta; 
   }
 }
 
@@ -144,7 +213,7 @@ model {
     target += multi_normal_cholesky_lpdf(psi_y | rep_vector(0., N_knots), R_psi_chol);
   }
   
-  matrix[N_spatial, N_knots] W_interp;
+  /*matrix[N_spatial, N_knots] W_interp;
   vector[N_spatial] psi_x_all;
   vector[N_spatial] psi_y_all;
   
@@ -168,37 +237,35 @@ model {
     for (i in 1:N_spatial) {
       matrix[2, 2] rotation = [[cos(alpha[i]), sin(alpha[i])], [-sin(alpha[i]), cos(alpha[i])]];
       row_vector[2] ellipse_scale = [psi_x_all[i], psi_y_all[i]];
-      // // Component of covariance matrix that handles ellipse rotation
-      // matrix[2, 2] rotation = [[cos(alpha[i]), sin(alpha[i])], [-sin(alpha[i]), cos(alpha[i])]];
       // Full kernel covariance matrix (square root)
       Sigma_sqrts[i] = tau_psi * diag_post_multiply(rotation, ellipse_scale);
     }
-  }
+  }*/
 
-  // Construct kernel covariance matrices at each site
-  array[N_spatial] real spatial_locs_transformed_norm;
-  profile("spatial_transform") {
-    for (i in 1:N_spatial) {
-      // // Component of covariance matrix that handles ellipse scaling
-      // row_vector[2] ellipse_scale = [psi_x_all[i], psi_y_all[i]];
-      // // Component of covariance matrix that handles ellipse rotation
-      // matrix[2, 2] rotation = [[cos(alpha[i]), sin(alpha[i])], [-sin(alpha[i]), cos(alpha[i])]];
-      // Full kernel covariance matrix (square root)
-      // matrix[2, 2] Sigma_sqrt = tau_psi * diag_post_multiply(rotations[i], ellipse_scale);
-      // matrix[2, 2] Sigma_sqrt = tau_psi * [[sqrt(psi_x_all[i])*cos(alpha[i]), sqrt(psi_y_all[i])*sin(alpha[i])], [-sqrt(psi_x_all[i])*sin(alpha[i]), sqrt(psi_y_all[i])*cos(alpha[i])]];
-      // Full kernel covariance matrix (matrix times its transpose)
-      // Equivalent to Sigma_sqrt * Sigma_sqrt'
-      // matrix[2, 2] Sigma = tcrossprod(Sigma_sqrt);
-      // matrix[2, 2] Sigma = tcrossprod(tau_psi * [[sqrt(psi_x_all[i])*cos(alpha[i]), sqrt(psi_y_all[i])*sin(alpha[i])], [-sqrt(psi_x_all[i])*sin(alpha[i]), sqrt(psi_y_all[i])*cos(alpha[i])]]);
-      // Transform each location according to its elliptical covariance matrix
-      // spatial_locs_transformed[i] = tau_psi * [[sqrt(psi_x_all[i])*cos(alpha[i]), sqrt(psi_y_all[i])*sin(alpha[i])], [-sqrt(psi_x_all[i])*sin(alpha[i]), sqrt(psi_y_all[i])*cos(alpha[i])]] * spatial_locs[i];
-      // spatial_locs_transformed[i] = tau_psi * [sqrt(psi_x_all[i])*cos(alpha[i])*spatial_locs[i][1] + sqrt(psi_y_all[i])*sin(alpha[i])*spatial_locs[i][2], -sqrt(psi_x_all[i])*sin(alpha[i])*spatial_locs[i][1] + sqrt(psi_y_all[i])*cos(alpha[i])*spatial_locs[i][2]]'
-      spatial_locs_transformed_norm[i] = norm2(Sigma_sqrts[i] * spatial_locs[i]);
-    }
-  }
-
-  // Reference: // Reference: https://discourse.mc-stan.org/t/approximate-gps-with-spectral-stuff/1041
-  vector[N_spatial] f = approx_L(10, global_scale, spatial_locs_transformed_norm, sigma_z, ell_z) * eta;
+  // // Construct kernel covariance matrices at each site
+  // array[N_spatial] real spatial_locs_transformed_norm;
+  // profile("spatial_transform") {
+  //   for (i in 1:N_spatial) {
+  //     // // Component of covariance matrix that handles ellipse scaling
+  //     // row_vector[2] ellipse_scale = [psi_x_all[i], psi_y_all[i]];
+  //     // // Component of covariance matrix that handles ellipse rotation
+  //     // matrix[2, 2] rotation = [[cos(alpha[i]), sin(alpha[i])], [-sin(alpha[i]), cos(alpha[i])]];
+  //     // Full kernel covariance matrix (square root)
+  //     // matrix[2, 2] Sigma_sqrt = tau_psi * diag_post_multiply(rotations[i], ellipse_scale);
+  //     // matrix[2, 2] Sigma_sqrt = tau_psi * [[sqrt(psi_x_all[i])*cos(alpha[i]), sqrt(psi_y_all[i])*sin(alpha[i])], [-sqrt(psi_x_all[i])*sin(alpha[i]), sqrt(psi_y_all[i])*cos(alpha[i])]];
+  //     // Full kernel covariance matrix (matrix times its transpose)
+  //     // Equivalent to Sigma_sqrt * Sigma_sqrt'
+  //     // matrix[2, 2] Sigma = tcrossprod(Sigma_sqrt);
+  //     // matrix[2, 2] Sigma = tcrossprod(tau_psi * [[sqrt(psi_x_all[i])*cos(alpha[i]), sqrt(psi_y_all[i])*sin(alpha[i])], [-sqrt(psi_x_all[i])*sin(alpha[i]), sqrt(psi_y_all[i])*cos(alpha[i])]]);
+  //     // Transform each location according to its elliptical covariance matrix
+  //     // spatial_locs_transformed[i] = tau_psi * [[sqrt(psi_x_all[i])*cos(alpha[i]), sqrt(psi_y_all[i])*sin(alpha[i])], [-sqrt(psi_x_all[i])*sin(alpha[i]), sqrt(psi_y_all[i])*cos(alpha[i])]] * spatial_locs[i];
+  //     // spatial_locs_transformed[i] = tau_psi * [sqrt(psi_x_all[i])*cos(alpha[i])*spatial_locs[i][1] + sqrt(psi_y_all[i])*sin(alpha[i])*spatial_locs[i][2], -sqrt(psi_x_all[i])*sin(alpha[i])*spatial_locs[i][1] + sqrt(psi_y_all[i])*cos(alpha[i])*spatial_locs[i][2]]'
+  //     spatial_locs_transformed_norm[i] = norm2(Sigma_sqrts[i] * spatial_locs[i]);
+  //   }
+  // }
+  // 
+  // // Reference: // Reference: https://discourse.mc-stan.org/t/approximate-gps-with-spectral-stuff/1041
+  // vector[N_spatial] f = approx_L(10, global_scale, spatial_locs_transformed_norm, sigma_z, ell_z) * eta;
 
   // // Latent variable formulation
   // // Reference: https://mc-stan.org/docs/stan-users-guide/fit-gp.html
@@ -259,8 +326,8 @@ model {
 }
 
 generated quantities {
-  matrix[N_spatial, N_knots] W_interp = gp_exp_quad_cov(spatial_locs, knot_locs, sigma_interp, ell_interp);
+  matrix[N_spatial, N_knots] W_interp_gen = gp_exp_quad_cov(spatial_locs, knot_locs, sigma_interp, ell_interp);
 
-  vector[N_spatial] psi_x_all = W_interp * psi_x;
-  vector[N_spatial] psi_y_all = W_interp * psi_y;
+  vector[N_spatial] psi_x_gen_all = W_interp_gen * psi_x;
+  vector[N_spatial] psi_y_gen_all = W_interp_gen * psi_y;
 }
