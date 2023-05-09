@@ -1,0 +1,27 @@
+3.04510828653971 seconds elapsed 
+N_spatial = 248
+N_knots = 30
+
+r_hat = 1.10303651215968
+
+ess_bulk = 33.3061299881173
+
+ess_tail = 219.321040723706
+
+
+Computed from 4000 by 248 log-likelihood matrix
+
+         Estimate   SE
+elpd_loo   -341.1 14.9
+p_loo        16.4  2.3
+looic       682.2 29.8
+------
+Monte Carlo SE of elpd_loo is NA.
+
+Pareto k diagnostic values:
+                         Count Pct.    Min. n_eff
+(-Inf, 0.5]   (good)     244   98.4%   2         
+ (0.5, 0.7]   (ok)         3    1.2%   0         
+   (0.7, 1]   (bad)        1    0.4%   54        
+   (1, Inf)   (very bad)   0    0.0%   <NA>      
+See help('pareto-k-diagnostic') for details.

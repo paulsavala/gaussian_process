@@ -45,11 +45,15 @@ data {
   int<lower=0> N_knots;
   array[N_knots] vector[2] knot_locs;
   
-  real M; // Number of eigenfunctions to use
+  int<lower=0> M; // Number of eigenfunctions to use
   
   int<lower=0> N_spatial; // Number of sites at which spatial process is measured
   array[N_spatial] vector[2] spatial_locs; // x-y coordinates of spatial process
   array[N_spatial] real y_spatial; // Measured value of spatial process at each site
+  
+  int<lower=0, upper=1> return_ellipses;
+  int<lower=0, upper=1> return_predictions;
+  int<lower=0, upper=1> return_log_likelihoods;
 }
 
 transformed data {
@@ -73,7 +77,7 @@ parameters {
   // Kernel (ellipse) process
   // real<lower=0> nugget_psi;
   real<lower=0> sigma_psi; // Variance of foci process
-  real<lower=0> tau_psi; // Range of ellipse dependence
+  // real<lower=0> tau_psi; // Range of ellipse dependence
   real<lower=0> ell_psi; // Range of ellipse dependence
   real<lower=0> nugget_psi;
   vector<lower=0>[N_knots] psi_x; // x component of foci
@@ -124,7 +128,8 @@ transformed parameters {
       row_vector[2] ellipse_scale = [psi_x[i], psi_y[i]];
       // Full kernel covariance matrix (square root)
       // tau_psi * diag_post_multiply(rotation, ellipse_scale);
-      spatial_locs_transformed_norm[i] = norm2(tau_psi * diag_post_multiply(rotation, ellipse_scale) * knot_locs[i]);
+      // spatial_locs_transformed_norm[i] = norm2(tau_psi * diag_post_multiply(rotation, ellipse_scale) * knot_locs[i]);
+      spatial_locs_transformed_norm[i] = norm2(diag_post_multiply(rotation, ellipse_scale) * knot_locs[i]);
     }
   }
   
@@ -183,7 +188,7 @@ model {
     // ell_psi ~ normal(0, max_dist/3);
     target += normal_lpdf(ell_psi | 0, max_dist/3);
     // tau_psi ~ std_normal();
-    target += std_normal_lpdf(tau_psi);
+    // target += std_normal_lpdf(tau_psi);
     
     // sigma_interp ~ std_normal();
     target += std_normal_lpdf(sigma_interp);
@@ -326,8 +331,24 @@ model {
 }
 
 generated quantities {
-  matrix[N_spatial, N_knots] W_interp_gen = gp_exp_quad_cov(spatial_locs, knot_locs, sigma_interp, ell_interp);
+  if (return_ellipses == 1) {
+    matrix[N_spatial, N_knots] W_interp_gen = gp_exp_quad_cov(spatial_locs, knot_locs, sigma_interp, ell_interp);
 
-  vector[N_spatial] psi_x_gen_all = W_interp_gen * psi_x;
-  vector[N_spatial] psi_y_gen_all = W_interp_gen * psi_y;
+    vector[N_spatial] psi_x_gen_all = W_interp_gen * psi_x;
+    vector[N_spatial] psi_y_gen_all = W_interp_gen * psi_y;
+  }
+  
+  if (return_predictions == 1) {
+    array[N_spatial] vector[100] y_spatial_sim;
+    for (i in 1:N_spatial) {
+      y_spatial_sim[i] = multi_normal_rng(mu + f, diag_matrix(rep_vector(lambda_y, N_spatial)));
+    }
+  }
+  
+  // if (return_log_likelihoods == 1) {
+    vector[N_spatial] log_lik;
+    for (i in 1:N_spatial) {
+      log_lik[i] = normal_lpdf(y_spatial[i] | mu + f[i], lambda_y);
+    }
+  // }
 }

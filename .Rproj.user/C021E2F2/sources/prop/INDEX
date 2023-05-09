@@ -31,4 +31,6 @@
 ~%2FProjects%2FGP%2Fstan%2Faniso_process_convolution_latent.stan="82050D14"
 ~%2FProjects%2FGP%2Fstan%2Faniso_sample_from_priors.stan="1546520E"
 ~%2FProjects%2FGP%2Fstan%2Fconvolution_test.stan="A49A67E1"
+~%2FProjects%2FGP%2Fstan%2Fpredictive_process.stan="64F9DDEA"
 ~%2FProjects%2FProcess%20convolution%2Fdata%20generation%2Fgenerate_data.R="24CCDD24"
+~%2FProjects%2Fnebcs_nci%2Fstan_models%2Fmodels%2Fpredict_arsenic_mixture.stan="155FADF8"

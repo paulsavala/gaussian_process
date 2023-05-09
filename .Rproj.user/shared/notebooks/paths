@@ -18,4 +18,6 @@
 /Users/psavala/Projects/GP/stan/aniso_process_convolution_latent.stan="52FC086A"
 /Users/psavala/Projects/GP/stan/aniso_sample_from_priors.stan="E52B7C44"
 /Users/psavala/Projects/GP/stan/convolution_test.stan="1675A5A4"
+/Users/psavala/Projects/GP/stan/predictive_process.stan="7226E5B2"
 /Users/psavala/Projects/Process convolution/data generation/generate_data.R="31A93B52"
+/Users/psavala/Projects/nebcs_nci/stan_models/models/predict_arsenic_mixture.stan="B2D3CE81"
