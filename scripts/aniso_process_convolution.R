@@ -133,35 +133,21 @@ extract_ellipses = function(df, df.all=NULL, fit, plot=TRUE, scale_ellipses=1, n
 }
 
 
-# Extract predictions for analysis ----------------------------------------
-# After the model is fit, extract (and optionally plot) the predictions
-loo_analysis = function(fit) {
-  log_lik_matrix = fit$draws(variables='log_lik') %>% as_draws_matrix
-  loo(log_lik_matrix) %>% print
-}
-
-
 # # Fitting knot model ------------------------------------------------------
 model.knots = cmdstan_model('stan/aniso_process_axes_latent_knots_spectral_profile.stan')
-# 
-# # Data
-# data.knots.spatial.df = cbind(data.knots$spatial_locs, data.knots$y_spatial)
-# names(data.knots.spatial.df) = c('x', 'y', 'pm2_5')
-# 
-# data.knots = prepare_data(epa.df, M=3, num_knots=30, plot=T, df.sample=data.knots.spatial.df)
-# 
-# for (m in c(3, 5, 7, 10)) {
-#   data.knots$M = m
-#   
-#   fit.knots = model.knots$sample(data=data.knots,
-#                                  parallel_chains=4,
-#                                  iter_warmup=2000,
-#                                  max_treedepth=10,
-#                                  init=function() list(sigma_z=0.1,
-#                                                       ell_z=0.1,
-#                                                       sigma_interp=0.1,
-#                                                       ell_interp=0.1,
-#                                                       lambda_y=0.1))
+
+# Data
+data.knots = prepare_data(epa.df, M=5, num_knots=15, sample_pct=0.32, plot=T, df.sample=data.knots.spatial.df)
+
+fit.knots = model.knots$sample(data=data.knots,
+                               parallel_chains=4,
+                               iter_warmup=2000,
+                               max_treedepth=10,
+                               init=function() list(sigma_z=0.1,
+                                                    ell_z=0.1,
+                                                    sigma_interp=0.1,
+                                                    ell_interp=0.1,
+                                                    lambda_y=0.1))
 #   
 #   sink(paste0("M_", data.knots$M, "_numknots_", data.knots$N_knots, ".txt"))
 #   paste0("N_spatial = ", data.knots$N_spatial, "\n") %>% cat
@@ -170,12 +156,12 @@ model.knots = cmdstan_model('stan/aniso_process_axes_latent_knots_spectral_profi
 #   fit.knots$loo() %>% print
 #   sink()
 # }
-# 
-# # Extract the locations and data
-# data.knots.spatial.df = cbind(data.knots$spatial_locs, data.knots$y_spatial)
-# names(data.knots.spatial.df) = c('x', 'y', 'pm2_5')
-# data.knots.knots.df = data.knots$knot_locs
-# 
+
+# Extract the locations and data
+data.knots.spatial.df = cbind(data.knots$spatial_locs, data.knots$y_spatial)
+names(data.knots.spatial.df) = c('x', 'y', 'pm2_5')
+data.knots.knots.df = data.knots$knot_locs
+
 # # Plot the ellipses
 # extract_ellipses(data.knots.spatial.df, 
 #                  fit=fit.knots, 
@@ -183,12 +169,12 @@ model.knots = cmdstan_model('stan/aniso_process_axes_latent_knots_spectral_profi
 #                  # knots=data.knots.knots.df,
 #                  psi_suffix="_all")
 # 
-# # Extract the data frame with ellipse data
-# ellipse_df = extract_ellipses(data.knots.spatial.df, 
-#                  fit=fit.knots, 
-#                  scale_ellipses=10, 
-#                  psi_suffix="_all",
-#                  return_df=TRUE)
+# Extract the data frame with ellipse data
+ellipse_df = extract_ellipses(data.knots.spatial.df,
+                 fit=fit.knots,
+                 scale_ellipses=10,
+                 psi_suffix="_all",
+                 return_df=TRUE)
 
 
 # Fitting predictive process model ----------------------------------------

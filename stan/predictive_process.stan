@@ -121,10 +121,10 @@ generated quantities {
     }
   }
 
-  // if (return_log_likelihoods == 1) {
+  if (return_log_likelihoods == 1) {
     vector[N_spatial] log_lik;
     for (i in 1:N_spatial) {
       log_lik[i] = normal_lpdf(y_spatial[i] | mu + f[i], lambda_y);
     }
-  // }
+  }
 }

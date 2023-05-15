@@ -35,23 +35,28 @@ ggplot() +
   ggtitle('Correlation by disatnce')
 
 # Multiple realizations
-Y = rmvnorm(3, sigma=Sigma) %>% t
+num_realizations = 50
+Y = rmvnorm(num_realizations, sigma=Sigma) %>% t
 df = data.frame(X=X)
 df = cbind(df, data.frame(Y))
-names(df) = c('X', 'Y1', 'Y2', 'Y3')
-df.long = tidyr::pivot_longer(df, cols=starts_with('Y'))
-df.long$name = as.factor(df.long$name)
+names(df) = c('X', paste0('Y', 1:num_realizations))
+df.long.orig = tidyr::pivot_longer(df, cols=starts_with('Y'))
+df.long.orig$name = as.factor(df.long.orig$name)
 
-ggplot(df.long) +
-  geom_line(aes(x=X, y=value, color=name)) +
-  ggtitle('Multiple realizations')
+ggplot(df.long.orig) +
+  geom_line(aes(x=X, y=value, group=name), alpha=0.25) +
+  ggtitle('Gaussian process - Priors')
 
 # Updating a 1d GP --------------------------------------------------
 n = 8
 X = matrix(seq(0, 2*pi, length=n), ncol=1)
+X.bad = matrix(c(0, 0.1, 2.5, 2.7, 5.5, 5.8), ncol=1)
 y = sin(X)
+y.bad = sin(X.bad)
 D = distance(X)
+D.bad = distance(X.bad)
 Sigma = exp(-D) + diag(eps, ncol(D))
+Sigma.bad = exp(-D.bad) + diag(eps, ncol(D.bad))
 
 # New realizations XX
 XX = matrix(seq(-0.5, 2*pi + 0.5, length=100), ncol=1)
@@ -61,13 +66,19 @@ SXX = exp(-DXX) + diag(eps, ncol(DXX)) # Covariance matrix of XX
 # Covariance between X and XX
 DX = distance(XX, X)
 SX = exp(-DX)
+DX.bad = distance(XX, X.bad)
+SX.bad = exp(-DX.bad)
 
 # Compute conditional mean and covariance of X, conditioned on observations XX
 mup = SX %*% solve(Sigma) %*% y
 Sigmap = SXX - SX %*% solve(Sigma) %*% t(SX)
 
+mup.bad = SX.bad %*% solve(Sigma.bad) %*% y.bad
+Sigmap.bad = SXX - SX.bad %*% solve(Sigma.bad) %*% t(SX.bad)
+
 # Generate observations using posterior
 YY = rmvnorm(100, mup, Sigmap)
+YY.bad = rmvnorm(100, mup.bad, Sigmap.bad)
 
 # Calculate 90% CI for posterior
 q1 = mup + qnorm(0.05, mean=0, sd=sqrt(diag(Sigmap)))
@@ -84,12 +95,12 @@ df.long$name = as.factor(df.long$name)
 # Plot observations
 ggplot() +
   geom_line(data=df.long, aes(x=XX, y=value, group=name), color='gray', alpha=0.4) +
-  geom_point(aes(x=X, y=y), size=5) +              # Original points
-  geom_line(aes(x=XX, y=mup)) +                    # Posterior mean
+  geom_point(aes(x=X.bad, y=y.bad), size=5) +              # Original points
+  geom_line(aes(x=XX, y=mup.bad)) +                    # Posterior mean
   geom_line(aes(x=XX, y=sin(XX)), color='blue') +  # Posterior actual
   geom_line(aes(x=XX, y=q1), color='red', linetype='dashed') + # Lower CI bound
   geom_line(aes(x=XX, y=q2), color='red', linetype='dashed') + # Upper CI bound
-  ggtitle('Posterior predictive distribution')
+  ggtitle('Gaussian process - Posterior')
 
 
 # Updating a 2d GP --------------------------------------------------------
