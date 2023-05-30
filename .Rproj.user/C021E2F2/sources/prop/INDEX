@@ -1,4 +1,5 @@
 ~%2FProjects%2FGP%2Faniso_process_convolution.R="BB29D068"
+~%2FProjects%2FGP%2Ffit_results%2Fanalyze_fit_results.R="FE98367C"
 ~%2FProjects%2FGP%2Fscripts%2FFuentes_kriging.R="48842C9B"
 ~%2FProjects%2FGP%2Fscripts%2FFuentes_spatial_process_MSE.R="73F37E90"
 ~%2FProjects%2FGP%2Fscripts%2FSurrogate_laGP.R="5B019DC8"
@@ -21,6 +22,7 @@
 ~%2FProjects%2FGP%2Fscripts%2Fload_epa_data.R="3229EFCF"
 ~%2FProjects%2FGP%2Fscripts%2Fpredictive_process.R="ED6AD309"
 ~%2FProjects%2FGP%2Fscripts%2FspBayes.R="CF6A8CFB"
+~%2FProjects%2FGP%2Fscripts%2Fspectral_eda.R="FE54E4D8"
 ~%2FProjects%2FGP%2Fscripts%2Fstan_predictive_process.R="1FCA9176"
 ~%2FProjects%2FGP%2Fscripts%2Fvisualize_entropy_knot_selection.R="8C68D636"
 ~%2FProjects%2FGP%2Fscripts%2Fvisualize_gp_predictions.R="CA9436C4"
