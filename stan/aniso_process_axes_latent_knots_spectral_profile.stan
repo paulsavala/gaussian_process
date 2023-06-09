@@ -338,12 +338,10 @@ generated quantities {
     vector[N_spatial] psi_y_gen_all = W_interp_gen * psi_y;
   }
   
-  if (return_predictions == 1) {
-    array[N_spatial] vector[100] y_spatial_sim;
-    for (i in 1:N_spatial) {
-      y_spatial_sim[i] = multi_normal_rng(mu + f, diag_matrix(rep_vector(lambda_y, N_spatial)));
-    }
-  }
+  // if (return_predictions == 1) {
+  array[N_spatial] real y_spatial_sim;
+  y_spatial_sim = normal_rng(mu + f, lambda_y);
+  // }
   
   // if (return_log_likelihoods == 1) {
     vector[N_spatial] log_lik;

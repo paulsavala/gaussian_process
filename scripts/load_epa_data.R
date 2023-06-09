@@ -3,7 +3,7 @@ library(dplyr)
 
 load_epa_data = function(snapshot_id=1) {
   # Load EPA data
-  epa.data = readRDS('data/df_data_12list.RDS')
+  epa.data = readRDS('../data/df_data_12list.RDS')
   # Single snapshot
   epa.df = epa.data[[snapshot_id]]
   epa.df$case_cntl = NULL
